@@ -1,0 +1,39 @@
+# ===== API =====
+fastapi==0.162.0
+uvicorn[standard]==0.54.0
+python-multipart==0.0.33
+
+# ===== Base de Datos (PostgreSQL) =====
+SQLAlchemy[asyncio]==2.1.8
+sqlmodel==0.0.48
+asyncpg==0.32.0
+alembic==1.20.1
+
+# ===== Autenticación y Seguridad =====
+python-jose[cryptography]==3.5.0
+pwdlib[argon2]==0.3.1
+
+# ===== Validación de Datos =====
+pydantic[email]==2.14.2
+pydantic-settings==2.16.2
+
+# ===== Cloudinary (Imágenes/Videos) =====
+cloudinary==1.46.3
+
+# ===== Utilidades =====
+python-dotenv==1.2.4
+email-validator==2.3.0
+python-dateutil==4.0.0
+httpx==0.28.1
+
+# ===== Rate Limiting =====
+slowapi==0.1.10
+
+# ===== Procesamiento de Imágenes =====
+Pillow==13.0.0
+
+# ===== Reportes Excel =====
+openpyxl==3.1.5
+
+# ===== Email =====
+resend[async]==2.51.0

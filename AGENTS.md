@@ -1,0 +1,1334 @@
+# AGENTS.md
+
+Este archivo contiene las reglas que deben aplicarse siempre al trabajar en este backend.
+
+Para detalles de arquitectura, responsabilidades por archivo, ejemplos y decisiones técnicas ampliadas, consultar `ARCHITECTURE.md` solo cuando la tarea lo requiera.
+
+---
+
+## 1. Stack
+
+- Python
+- FastAPI
+- PostgreSQL
+- SQLModel para modelos persistentes
+- SQLAlchemy async / `AsyncSession`
+- asyncpg
+- Pydantic para schemas
+- Alembic para migraciones
+
+Regla fundamental:
+
+```text
+models.py  → SQLModel
+schemas.py → Pydantic
+```
+
+Models y schemas son capas independientes.
+
+Nunca hacer herencia entre un modelo persistente y un schema.
+
+La duplicación razonable de campos entre ambas capas es aceptada para mantener desacopladas la persistencia y la API.
+
+---
+
+## 2. Estructura de `app/`
+
+`app/` contiene únicamente estas cinco carpetas principales:
+
+```text
+app/
+├── core/
+├── domains/
+├── integrations/
+├── middlewares/
+└── shared/
+```
+
+Además:
+
+```text
+app/
+├── __init__.py
+├── api.py
+└── main.py
+```
+
+No crear nuevas carpetas raíz dentro de `app/` sin una necesidad arquitectónica explícita.
+
+---
+
+## 3. Responsabilidades principales
+
+### `core/`
+Infraestructura fundamental.
+
+Contiene:
+
+```text
+base_model.py
+config.py
+database.py
+logging.py
+openapi.py
+security.py
+system_router.py
+```
+
+No colocar lógica funcional de dominios dentro de `core/`.
+
+### `domains/`
+Funcionalidad de negocio.
+
+Estructura estándar:
+
+```text
+<domain>/
+├── __init__.py
+├── models.py
+├── schemas.py
+├── repositories.py
+├── services.py
+└── routes.py
+```
+
+`auth/` incluye además `dependencies.py`.
+
+`error_logs/` es obligatorio y contiene como mínimo su modelo y el repository
+que encapsula su persistencia.
+
+### `integrations/`
+Adaptadores de proveedores externos.
+
+Ejemplos:
+
+```text
+cloudinary.py
+resend.py
+redis.py
+```
+
+Flujo:
+
+```text
+service
+↓
+integration
+↓
+provider
+```
+
+### `middlewares/`
+Comportamiento HTTP global.
+
+```text
+cors.py
+exception_handlers.py
+limiter.py
+```
+
+### `shared/`
+Código realmente reutilizable entre dominios.
+
+No utilizarlo como carpeta miscelánea.
+
+---
+
+## 4. Models
+
+Los modelos persistentes utilizan SQLModel con `table=True`.
+
+Todos los modelos normales heredan del `BaseModel` definido en `core/base_model.py`.
+
+`BaseModel` contiene:
+
+```text
+id
+created_at
+created_by
+updated_at
+updated_by
+is_deleted
+deleted_at
+deleted_by
+```
+
+`BaseModel` no utiliza `table=True`.
+
+Los models definen exclusivamente:
+
+- columnas;
+- primary keys;
+- foreign keys;
+- relaciones;
+- índices;
+- `unique`;
+- `nullable`;
+- restricciones persistentes.
+
+No contienen lógica HTTP ni reglas funcionales de negocio.
+
+Las relaciones necesarias para los schemas con embebidos se declaran con
+`Relationship()` y carga lazy deshabilitada (`lazy="raise"`), porque la sesión
+es async y una carga implícita fallaría.
+
+---
+
+## 5. Soft delete y auditoría
+
+La eliminación estándar es lógica.
+
+`delete` debe actualizar:
+
+```text
+is_deleted = True
+deleted_at
+deleted_by
+updated_at
+updated_by
+```
+
+`get` y `list` excluyen por defecto registros con `is_deleted=True`.
+
+La consulta de eliminados debe ser explícita.
+
+Los services son responsables de asignar:
+
+```text
+created_by
+updated_by
+deleted_by
+updated_at
+deleted_at
+```
+
+cuando corresponda.
+
+### Eliminación con dependientes
+
+Al eliminar un registro, lo que ocurre con los registros que dependen de él
+lo determina el tipo de foreign key con que lo apuntan (§6):
+
+- Hijos (foreign key de dueño): se eliminan lógicamente en cascada, en la
+  misma transacción y con los mismos `deleted_at` y `deleted_by`. Solo afecta
+  a los registros activos.
+- Registros que lo usan como referencia: bloquean la eliminación con `409`
+  mientras estén activos. Para retirar un registro compartido sin eliminarlo
+  se usa `is_visible` u otro estado equivalente.
+- Enlaces N:M sin datos propios (§9): se eliminan lógicamente en cascada al
+  eliminar cualquiera de sus extremos.
+- Jerarquía autorreferenciada: la eliminación se bloquea mientras el registro
+  tenga hijos activos.
+
+La cascada la coordina el service del registro eliminado; los repositories
+exponen las operaciones de marcado y no hacen commit. No se usa
+`ON DELETE CASCADE`: con eliminación lógica no hay borrado físico que
+propagar.
+
+Una referencia queda libre cuando los registros que la usaban se eliminan,
+incluso si fue por una cascada.
+
+---
+
+## 6. Schemas
+
+Los schemas utilizan exclusivamente `pydantic.BaseModel`.
+
+Schemas estándar por dominio:
+
+```text
+Create
+Update
+Response
+ResponseAudit
+```
+
+`ResponseAudit` hereda de `Response`.
+
+Se permiten schemas especiales cuando exista una operación funcional distinta, por ejemplo:
+
+```text
+UserUpdateMe
+ChangePassword
+ResetPassword
+```
+
+Los schemas de respuesta que se construyan desde objetos ORM deben utilizar `ConfigDict(from_attributes=True)`.
+
+En todos los schemas `Update` utilizados por operaciones `PATCH`, cada campo
+modificable debe poder omitirse y se declara siempre con este patrón:
+
+```python
+field: T | None = Field(default=None)
+```
+
+El tipo `T | None` permite representar el valor temporal usado cuando el campo
+se omite, y `default=None` hace que el campo no sea obligatorio en la petición.
+Esto no significa que todos los campos persistentes sean nullable.
+
+Cada `field_validator` debe aplicar explícitamente una de estas políticas:
+
+- si la columna es nullable, aceptar `None` y devolver `None` para permitir que
+  el cliente elimine su valor;
+- si la columna no es nullable, rechazar un `None` enviado explícitamente;
+- si existe un valor concreto, delegar su validación de tipo, formato y
+  normalización en la función `object → T` correspondiente de
+  `shared/services/validators.py`.
+
+Los services deben procesar estas actualizaciones con:
+
+```python
+model_dump(exclude_unset=True)
+```
+
+No utilizar `exclude_none=True` para este flujo, porque eliminaría también los
+`None` enviados explícitamente y haría imposible limpiar campos nullable. Los
+valores explícitos `0` y `False` tampoco deben descartarse.
+
+### Ejemplos de documentación
+
+Todo schema expuesto en la API define un ejemplo:
+
+```python
+model_config = ConfigDict(json_schema_extra={"example": {...}})
+```
+
+El ejemplo:
+
+- contiene todos los campos del schema, incluidos los heredados y los
+  embebidos, en el orden en que se declaran;
+- no contiene valores `null`: un campo nullable se muestra con un valor de
+  ejemplo, porque el ejemplo documenta el tipo; la pestaña Schema de la
+  documentación indica qué campos admiten `null`;
+- pasa la validación de su propio schema;
+- es coherente entre campos; por ejemplo, un `ResponseAudit` con
+  `deleted_at` tiene `is_deleted: true`.
+
+`core/openapi.py` conserva estos ejemplos tal como están escritos, con su
+orden, al generar la documentación.
+
+### Schemas de lectura con embebidos
+
+Los dominios cuyo model tiene al menos una foreign key definen además:
+
+```text
+ListItem
+Detail
+```
+
+Los dominios que solo tienen primary key no los definen.
+
+Se crean siempre, incluso cuando no añaden campos respecto al schema del que
+heredan; en ese caso quedan como una clase vacía. Cadena de herencia:
+
+```text
+Response → ListItem → Detail
+```
+
+`ResponseAudit` hereda de `Response`, no forma parte de esta cadena y nunca se
+embebe.
+
+#### Dueño y referencia
+
+Cada foreign key se clasifica como:
+
+```text
+dueño       → el registro vive dentro de una colección del otro
+referencia  → el registro apunta a un objeto compartido que existe por sí mismo
+```
+
+Prueba práctica: si en Python se escribiría `padre.hijos.append(obj)`, la
+foreign key es de dueño; si se escribiría `Obj(campo=VALOR_COMPARTIDO)`, como
+quien elige un miembro de un `Enum`, es de referencia.
+
+Ejemplo: en una línea de pedido, `pedido_id` es de dueño y `producto_id` es de
+referencia.
+
+En las tablas de enlace N:M, ambas foreign keys son de referencia.
+
+#### Contenido de cada schema
+
+```text
+Response  → columnas propias + foreign keys como id. No embebe nada.
+
+ListItem  → Response
+            + cada foreign key de referencia embebida como el Response del
+              registro referenciado.
+            Nunca contiene colecciones.
+
+Detail    → ListItem
+            + los hijos propios (registros cuya foreign key de dueño apunta a
+              este registro), embebidos como el Detail del hijo.
+            + las asociaciones N:M acotadas, embebidas como el Response del
+              extremo lejano, sin exponer la tabla de enlace.
+```
+
+#### Profundidad
+
+El embebido solo se mueve en dos direcciones:
+
+```text
+hacia abajo   (dueño → hijos)  → continúa mientras existan hijos
+hacia un lado (referencia)     → un solo paso; el Response es plano y termina
+hacia arriba  (hijo → dueño)   → nunca
+```
+
+Por tanto:
+
+- `ListItem` tiene exactamente un nivel.
+- `Detail` desciende hasta las hojas del árbol de dueños, con un paso lateral
+  por cada referencia.
+- Ningún embebido vuelve al objeto de partida ni produce ciclos.
+
+#### Restricciones
+
+- La foreign key de dueño nunca se embebe; permanece como id.
+- Una referencia embebida utiliza siempre `Response`; nunca `ListItem`,
+  `Detail` ni `ResponseAudit`.
+- Las colecciones sin límite natural no se embeben; se exponen como un listado
+  filtrado y paginado.
+- Si la foreign key de dueño apunta al mismo model (jerarquía
+  autorreferenciada), el `Detail` embebe los hijos como `ListItem` y desciende
+  un solo nivel. La jerarquía completa se expone con los schemas de
+  `shared/schemas/tree.py` en un endpoint propio.
+- Todo elemento embebido excluye los registros con `is_deleted=True`. En
+  endpoints públicos aplica además las reglas de visibilidad del dominio.
+
+### Create en un solo paso
+
+Un dominio con hijos propios puede crear su árbol completo en una sola
+petición. Se hace en su `POST /`, que recibe `<X>DetailCreate` y responde
+`<X>Detail`, el mismo schema que `GET /{id}`.
+
+```text
+<X>DetailCreate     → hereda de <X>Create
+                      + hijos propios como list[<Hijo>DetailCreate]
+                      + asociaciones N:M como <relacion>_ids: list[id]
+
+<Hijo>DetailCreate  → campos de <Hijo>Create sin la foreign key de dueño
+                      + sus hijos propios como list[<Nieto>DetailCreate]
+```
+
+- La foreign key de dueño nunca se envía; la asigna el service.
+- Las referencias se envían siempre como id.
+- No contiene `id` ni campos de auditoría.
+- Si `<Hijo>Create` solo añade la foreign key de dueño, hereda de
+  `<Hijo>DetailCreate`.
+- El schema valida la estructura: hijos repetidos dentro del padre,
+  `max_length` en cada colección y `<relacion>_ids` deduplicados.
+- El service aplica las mismas reglas que el create individual de cada hijo,
+  en una sola transacción.
+- Los create individuales de los hijos se conservan para editar un árbol ya
+  existente.
+
+---
+
+## 7. Validaciones
+
+Separación obligatoria:
+
+```text
+Schema
+→ formato, estructura y normalización
+
+Service
+→ reglas de negocio y coordinación de las validaciones con base de datos
+
+Repository
+→ queries y operaciones de persistencia
+
+Model / PostgreSQL
+→ integridad persistente
+
+Integration
+→ restricciones técnicas necesarias para proteger o utilizar al proveedor externo
+```
+
+Los validadores reutilizables sin acceso a base de datos viven en:
+
+```text
+shared/services/validators.py
+```
+
+Todas las funciones reutilizables de validación reciben el valor de entrada
+como `object`, comprueban internamente su tipo en tiempo de ejecución y
+devuelven un valor concreto validado o normalizado:
+
+```text
+object → T
+```
+
+Cuando el tipo recibido no es válido, deben lanzar `ValueError`; no deben
+depender de métodos del tipo esperado antes de comprobarlo. Esta convención
+permite reutilizarlas tanto con `field_validator(mode="before")` como después
+del tipado de Pydantic.
+
+Estas funciones no devuelven `None`. La decisión de permitir, conservar o
+rechazar un valor `None` pertenece al schema y debe expresarse explícitamente
+en su `field_validator`. Esto permite diferenciar entre un campo nullable y un
+campo que puede omitirse en un `PATCH`, pero no establecerse como `null`.
+
+---
+
+## 8. Services
+
+Los services contienen:
+
+- lógica de negocio;
+- coordinación de repositories;
+- creación;
+- actualización;
+- soft delete;
+- transacciones;
+- validaciones con base de datos;
+- asignación de campos de auditoría;
+- coordinación de integrations.
+
+CRUD estándar:
+
+```text
+get
+list
+create
+update
+delete
+```
+
+No duplicar services si uno existente resuelve correctamente la operación.
+
+### Repositories
+
+Cada dominio persistente utiliza `repositories.py` para encapsular el acceso a
+datos. Los repositories:
+
+- construyen y ejecutan queries con SQLModel y SQLAlchemy;
+- reciben o utilizan `AsyncSession`;
+- recuperan y persisten models;
+- aplican filtros, orden, paginación y condiciones de soft delete solicitadas
+  por el service;
+- cargan explícitamente las relaciones que requiere cada `ListItem` y `Detail`,
+  por ejemplo con `selectinload`, aplicando soft delete también a los
+  elementos embebidos;
+- pueden usar `flush()` y `refresh()` cuando la operación lo requiera.
+
+Los repositories no contienen reglas de negocio, decisiones HTTP, schemas de
+API ni llamadas a integrations. El service decide qué operación debe
+realizarse y conserva el control de `commit()` y `rollback()` para poder
+coordinar una misma transacción entre varios repositories.
+
+No crear un repository genérico o una clase base por defecto. Cada repository
+debe exponer operaciones explícitas que respondan a necesidades reales del
+dominio.
+
+Las routes no ejecutan queries ni llaman repositories directamente.
+
+---
+
+## 9. Routes
+
+Las routes gestionan únicamente:
+
+- HTTP;
+- `Depends`;
+- path/query parameters;
+- schemas;
+- status codes;
+- llamada al service.
+
+CRUD estándar:
+
+```text
+GET    /
+GET    /{id}
+GET    /{id}/audit
+POST   /
+PATCH  /{id}
+DELETE /{id}
+```
+
+`GET /` devuelve paginación por defecto.
+
+Schema de respuesta de cada endpoint:
+
+```text
+                  dominio sin foreign keys        dominio con foreign keys
+GET /             PaginatedResponse[Response]     PaginatedResponse[ListItem]
+GET /{id}         Response                        Detail
+GET /{id}/audit   ResponseAudit                   ResponseAudit
+POST /            Response                        Detail
+PATCH /{id}       Response                        Detail
+```
+
+`ListItem` y `Detail` contienen todos los campos de `Response`, por lo que lo
+sustituyen sin necesidad de endpoints adicionales.
+
+`POST /` y `PATCH /{id}` responden lo mismo que `GET /{id}`, para que el
+cliente reciba el registro creado o actualizado sin otra consulta. El service
+lo recarga con su `Detail` después del commit; en un `PATCH`, también cuando no
+hay cambios. Las operaciones que no crean ni modifican un recurso por su id,
+como subir un archivo, emitir tokens o reemplazar un enlace N:M, conservan su
+propia respuesta.
+
+`GET /{id}/audit` expone los campos de auditoría autorizados. Cuando
+`GET /{id}` y `GET /{id}/audit` recuperan el mismo registro y aplican las
+mismas reglas de negocio, deben reutilizar el mismo `get`; la diferencia queda
+en el `response_model`, los permisos de acceso, la información expuesta y las
+relaciones que el repository carga para el `Detail`.
+
+`GET /me` y `PATCH /me` deben reutilizar `get` y `update` cuando la lógica sea equivalente.
+
+### Tablas de enlace N:M
+
+Una tabla de enlace N:M sin columnas propias, aparte de las de auditoría, no
+se expone como recurso: no tiene CRUD, `GET /{id}` ni `PATCH`. La relación se
+gestiona desde el extremo con menos relaciones, mediante una sub-ruta de ese
+padre que reemplaza el conjunto completo:
+
+```text
+PUT /<padre>/{id}/<relacion>    body: {"<relacion>_ids": [...]}
+```
+
+Ejemplo: `PUT /productos/{id}/categorias` con
+`{"categoria_ids": [A, B]}` reemplaza todas las categorías del producto. Si
+tenía `[A, C]`:
+
+- `A` se conserva sin cambios, con su auditoría original;
+- `C` se elimina lógicamente;
+- `B` se crea;
+- `[]` quita todas las categorías;
+- repetir la misma petición no produce cambios.
+
+Todo ocurre en una sola transacción, y cada id se valida con las mismas
+reglas que una creación individual.
+
+Las lecturas no necesitan rutas propias: el `Detail` del padre embebe la
+relación (§6), y el listado del otro extremo admite un filtro por el padre,
+por ejemplo `GET /productos?categoria_id=`. Por eso el dominio de enlace no
+define `ListItem` ni `Detail`, y en §20 no tiene segunda vuelta. Su endpoint
+vive en el `routes.py` del dominio de enlace, para que su lógica no se
+mezcle con la del padre.
+
+Si el enlace tiene datos propios, como un orden, un rol o una cantidad, es un
+recurso de asociación y sigue el CRUD estándar.
+
+---
+
+## 10. Base de datos
+
+`core/database.py` administra:
+
+```text
+AsyncEngine
+async_sessionmaker
+initialize_database
+check_database_connection
+get_db
+close_database
+```
+
+Nombres oficiales en `app.state`:
+
+```text
+app.state.db_engine
+app.state.db_session_factory
+```
+
+No utilizar nombres alternativos para estos objetos.
+
+En routes/dependencies, usar normalmente:
+
+```python
+Depends(get_db)
+```
+
+Código global fuera del flujo normal de `Depends()` puede usar `app.state.db_session_factory`.
+
+El proyecto utiliza exactamente dos bases de datos, seleccionadas únicamente
+mediante `ENVIRONMENT`:
+
+```text
+production                    → DATABASE_URL
+development | test | staging → TEST_DATABASE_URL
+```
+
+`DATABASE_URL` está reservada para los datos reales de producción.
+`TEST_DATABASE_URL` es la base no productiva compartida por desarrollo,
+pruebas y staging. Mientras estos entornos compartan la misma base, las pruebas
+automatizadas no deben vaciar tablas ni destruir datos sin una protección
+explícita.
+
+La selección de la base no depende de `DEBUG`. Tanto la aplicación en
+`core/database.py` como Alembic en `migrations/env.py` deben aplicar exactamente
+la misma regla.
+
+---
+
+## 11. Alembic
+
+Las tablas no se crean durante startup.
+
+No crear funciones como:
+
+```text
+create_users_table
+create_auth_session_table
+create_all_tables
+```
+
+No usar `SQLModel.metadata.create_all()` como sistema normal de migraciones.
+
+Flujo:
+
+```text
+models.py
+↓
+Alembic autogenerate
+↓
+revisar migration
+↓
+alembic upgrade
+↓
+PostgreSQL
+```
+
+Al crear o modificar modelos, garantizar que Alembic pueda descubrirlos.
+
+---
+
+## 12. Config
+
+Toda configuración proviene de `core/config.py`.
+
+No leer `.env` directamente en otros módulos.
+
+`ENVIRONMENT` es la fuente principal de comportamiento:
+
+```text
+development
+staging
+production
+test
+```
+
+Propiedades como `DEBUG`, expiraciones, cookies y CORS pueden derivarse de `ENVIRONMENT`.
+
+---
+
+## 13. Logging
+
+Todos los módulos utilizan:
+
+```python
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
+```
+
+No configurar logging localmente.
+
+`setup_logging(settings)` se ejecuta una sola vez durante el arranque.
+
+---
+
+## 14. Security
+
+`core/security.py` contiene primitivas reutilizables:
+
+```text
+password hashing
+JWT
+refresh tokens
+CSRF
+one-time tokens
+```
+
+No contiene:
+
+```text
+login
+logout
+sesiones
+consultas de usuarios
+roles
+permisos
+Depends
+cookies
+respuestas HTTP
+```
+
+`SECRET_KEY` y `CSRF_SECRET_KEY` deben ser diferentes.
+
+### Roles y permisos
+
+`shared/services/permissions.py` es la única fuente de verdad de la
+autorización:
+
+```text
+ROLE_PERMISSIONS → acciones que cada rol puede ejecutar en cada módulo
+ROLE_LEVEL       → jerarquía de roles; un número mayor es un rango superior
+ROLES_*          → grupos de roles por alcance de datos, cuando existan
+```
+
+Expone:
+
+```python
+has_permission(role, module, action) -> bool
+can_manage_role(actor_role, target_role) -> bool
+```
+
+Agregar un rol exige actualizar todas las estructuras de ese archivo, y solo
+ese archivo.
+
+#### Niveles de acceso
+
+Cada endpoint pertenece a exactamente uno de estos niveles, evaluados en orden:
+
+```text
+1. Pública              → sin dependencia de usuario
+2. Recurso propio (/me) → get_current_principal
+3. Capacidad de módulo  → require_permission(Module, Action)   ← por defecto
+4. Vista de un rol      → require_role(...)                    ← excepción
+```
+
+- **Pública:** endpoints abiertos sin login, como la autenticación (login,
+  registro, refresh, recuperación de contraseña), los endpoints de sistema
+  (health) y las lecturas públicas que defina un dominio, por ejemplo un
+  catálogo. Una lectura pública aplica las reglas de visibilidad del dominio y
+  nunca expone campos de auditoría. Si su respuesta cambia cuando hay un
+  usuario autenticado, usa `get_current_principal_optional`. Los endpoints
+  públicos que reciben credenciales o datos del cliente deben tener rate limit.
+- **`/me`:** no verifica permisos por módulo, porque su autorización es la
+  identidad: solo opera sobre el usuario autenticado. El id del recurso se
+  obtiene únicamente de `current_user.id`; nunca se acepta un id del path,
+  query o body. Así, un rol sin acceso al módulo de usuarios puede consultar y
+  editar su propio perfil y cambiar su contraseña.
+- **`require_permission`:** opción por defecto para toda operación sobre un
+  recurso de un módulo, sea CRUD o no.
+- **`require_role`:** solo cuando el endpoint está definido por el rol, es
+  decir, su respuesta o flujo no tiene sentido para otro rol (por ejemplo,
+  dashboards o resúmenes de inicio por rol).
+
+#### Cómo elegir entre `require_permission` y `require_role`
+
+Aplicar esta prueba:
+
+> Si mañana se crea un rol nuevo, ¿debería poder darse acceso a este endpoint
+> modificando solo la matriz de permisos?
+
+- **Sí** → `require_permission`.
+- **No**, porque el endpoint pertenece a un rol y otro rol necesitaría una
+  vista distinta → `require_role`.
+
+Las tareas del sistema (expirar registros, recalcular saldos) idealmente no se
+exponen como endpoints, sino como jobs programados. Si deben exponerse, se
+acepta `require_role` con los roles operativos explícitos.
+
+#### Las acciones son capacidades, no métodos HTTP
+
+`Action` representa lo que el rol puede hacer, no el verbo HTTP del endpoint.
+
+```text
+POST /recurso/{id}/confirmar  → UPDATE
+POST /recurso/{id}/cancelar   → UPDATE
+POST /recurso/{id}/imagen     → UPDATE
+POST /recurso/sugerir-valor   → CREATE   (ayuda previa a crear)
+GET  /recurso/{id}/audit      → AUDIT
+```
+
+#### Matriz de permisos
+
+- `ROLE_PERMISSIONS` es la única fuente de verdad de `rol × módulo → acciones`.
+- Se deniega por defecto: un módulo ausente equivale a sin acceso.
+- Cada rol lista todos los módulos, incluso los que no puede usar, para que
+  la matriz se lea como una tabla.
+- Los conjuntos de acciones son `frozenset`, escritos de forma explícita en
+  cada entrada, aunque se repitan, para mayor legibilidad. No se usan
+  constantes con nombre para agruparlas.
+- El acceso vacío se escribe `frozenset()`. Nunca `{}`, que en Python es un
+  `dict`.
+- Una entrada con menos acciones que el resto lleva un comentario con su
+  motivo de negocio.
+
+```python
+ROLE_PERMISSIONS: dict[Role, dict[Module, frozenset[Action]]] = {
+    Role.EJEMPLO: {
+        Module.A: frozenset({Action.READ, Action.UPDATE}),  # motivo de negocio
+        Module.B: frozenset(),  # sin acceso
+    },
+}
+
+
+def has_permission(role: Role, module: Module, action: Action) -> bool:
+    return action in ROLE_PERMISSIONS.get(role, {}).get(module, frozenset())
+```
+
+#### Alcance de datos (segunda puerta)
+
+La autorización tiene dos puertas y ambas son obligatorias:
+
+```text
+1. Permiso → ¿este rol puede usar este endpoint?          → dependencia + matriz de permisos
+2. Alcance → ¿qué filas puede ver o modificar este actor? → alcance resuelto por el service
+```
+
+La primera puerta no protege los datos: sin la segunda, un rol con `READ` sobre
+un módulo puede leer todas sus filas.
+
+El alcance no es lo mismo que la visibilidad del dominio (`is_visible`). La
+visibilidad decide qué se muestra al público; el alcance decide qué filas
+corresponden a cada actor autenticado.
+
+**Cuándo un módulo necesita alcance.** Para cada módulo, y para cada rol que
+tenga alguna acción sobre él en la matriz, responder:
+
+> ¿Este rol debe ver o modificar **todas** las filas del módulo?
+
+- **Sí para todos los roles con acceso** → no necesita alcance.
+- **No para al menos un rol** → necesita alcance, aplicado a todo lo que ese
+  rol pueda leer o modificar.
+
+**Reglas de implementación.**
+
+1. **Una única resolución de alcance por módulo.** Recibe el actor (`id`, `rol`
+   y el ámbito organizativo que corresponda, como una sucursal o un negocio) y
+   produce el alcance. La reutilizan todas las lecturas del módulo: `get`,
+   `list`, `get_by_*` y `audit`.
+2. **Denegar por defecto.** Un rol no contemplado recibe un alcance vacío, que
+   no devuelve ninguna fila. Nunca recibe un alcance "sin filtro".
+3. **Las escrituras también se filtran.** `update`, `delete` y acciones como
+   confirmar o cancelar buscan la fila con el mismo alcance. De lo contrario,
+   un actor puede modificar registros ajenos si conoce su id.
+4. **Los grupos de roles son constantes en `permissions.py`**, por ejemplo
+   `ROLES_WITH_GLOBAL_SCOPE` o `BUSINESS_SCOPED_ROLES`, junto a la matriz.
+   Nunca se escriben como condiciones sueltas repartidas por el código.
+5. **Fuera de alcance = `404`; sin la acción = `403`.**
+   - Si el actor no puede ver la fila, se responde que no existe, para no
+     revelar su existencia.
+   - Si la ve pero no puede ejecutar esa acción sobre ella, se responde `403`.
+     Por ejemplo, la jerarquía de usuarios: un OWNER ve a un SUPERADMIN en el
+     listado, pero no puede modificarlo.
+6. **Un test por rol** comprueba que no obtiene ni modifica filas fuera de su
+   alcance, igual que se prueba el `403` de la primera puerta.
+
+Las comprobaciones de integridad no aplican el alcance, porque protegen los
+datos y no la vista del actor. Consultan siempre todas las filas activas:
+
+- la unicidad, por ejemplo un `get_by_slug` usado para rechazar un duplicado;
+- las referencias activas que bloquean una eliminación con `409` (§5);
+- los hijos que se eliminan en cascada (§5).
+
+**Dónde vive el alcance.**
+
+> Los roles nunca bajan al repository. El SQL nunca sube al service.
+
+```text
+repositories.py → <Modulo>Scope: dataclass sin roles (business_id, all, ...)
+                  contrato de entrada del repository: alcance → WHERE
+services.py     → resolución del alcance a partir del actor: actor → <Modulo>Scope
+```
+
+La clase del alcance se define en el repository, que es quien la consume. Así,
+el service la importa y el repository no importa al service (§18).
+
+```python
+# repositories.py: aplica el alcance, sin roles
+@dataclass(frozen=True)
+class OrderScope:
+    business_id: UUID | None = None
+    all: bool = False
+
+
+# services.py: decide el alcance, sin SQL
+def _scope_for(actor: CurrentUser) -> OrderScope:
+    if actor.rol in ROLES_WITH_GLOBAL_SCOPE:
+        return OrderScope(all=True)
+    if actor.rol in BUSINESS_SCOPED_ROLES:
+        return OrderScope(business_id=actor.business_id)
+    return OrderScope()  # alcance vacío: no devuelve filas
+
+
+order = await OrderRepository.get(db_session, order_id, scope=_scope_for(actor))
+```
+
+#### Jerarquía de usuarios
+
+El service de usuarios aplica además la jerarquía:
+
+- un usuario solo puede crear, modificar, eliminar o restablecer la contraseña
+  de usuarios con un rol estrictamente inferior al suyo; nunca de su mismo rol
+  ni de uno superior;
+- solo puede asignar roles estrictamente inferiores al suyo;
+- al modificar un usuario se valida tanto su rol actual como el rol resultante;
+- nadie puede cambiar su propio rol: los schemas y endpoints `/me` no aceptan
+  el campo de rol;
+- en consecuencia, el rol de mayor rango no es gestionable desde la API y se
+  crea mediante seed;
+- el rol de quien actúa se obtiene siempre del usuario autenticado en el
+  servidor, nunca de datos enviados por el cliente.
+
+Una violación de la jerarquía responde `403` con `ErrorCode.PERMISSION_DENIED`.
+
+---
+
+## 15. Integrations
+
+Las integrations encapsulan SDKs y proveedores externos.
+
+No deben decidir reglas funcionales del dominio.
+
+Pueden contener restricciones técnicas destinadas a proteger al proveedor.
+
+### Cloudinary
+
+Puede validar:
+
+```text
+tipo de imagen
+bloqueo de SVG
+tamaño máximo
+```
+
+Guardar la URL segura de la imagen:
+
+```text
+image_url
+```
+
+Para eliminar o administrar recursos, la integration puede obtener el
+`public_id` desde una URL válida de Cloudinary mediante una función dedicada.
+La extracción debe permanecer centralizada en `integrations/cloudinary.py`; no
+debe duplicarse en routes ni services.
+
+Si el SDK ejecuta operaciones síncronas dentro del backend async, usar un mecanismo como `asyncio.to_thread()`.
+
+---
+
+## 16. Middlewares
+
+`middlewares/__init__.py` es el punto único de registro:
+
+```python
+register_exception_handlers(app, settings)
+register_rate_limiter(app)
+register_cors(app, settings)
+```
+
+### CORS
+Solo configura `CORSMiddleware`.
+
+### Limiter
+Solo configura SlowAPI y guarda:
+
+```text
+app.state.limiter
+```
+
+El handler `429` vive únicamente en `exception_handlers.py`.
+
+`memory://` es válido para una sola instancia/proceso efectivo. Si existen varios workers o instancias, usar almacenamiento compartido como Redis.
+
+### Exception handlers
+
+Centraliza:
+
+```text
+AppException
+RequestValidationError
+RateLimitExceeded
+StarletteHTTPException
+Exception
+```
+
+Los errores inesperados:
+
+```text
+→ se registran con logging
+→ pueden persistirse en ErrorLog
+→ no exponen detalles internos fuera de DEBUG
+```
+
+El handler global puede utilizar `app.state.db_session_factory` porque no usa
+el flujo normal de `Depends(get_db)`, pero delega las queries y la persistencia
+de `ErrorLog` en su repository.
+
+---
+
+## 17. API y main
+
+`api.py` es exclusivamente un agregador de routers.
+
+Estructura:
+
+```text
+api_router
+├── system_router
+└── no_system_router (/api/v1)
+```
+
+`main.py` debe mantenerse pequeño.
+
+Puede:
+
+- obtener settings;
+- configurar logging;
+- crear FastAPI;
+- configurar lifespan;
+- configurar integrations;
+- inicializar PostgreSQL;
+- comprobar conexión;
+- guardar `db_engine` y `db_session_factory`;
+- registrar middlewares;
+- incluir `api_router`;
+- cerrar recursos.
+
+No debe crear tablas ni contener lógica de negocio.
+
+---
+
+## 18. Dirección de dependencias
+
+Mantener:
+
+```text
+routes
+↓
+services
+↓
+repositories
+↓
+models
+```
+
+Para proveedores:
+
+```text
+services
+↓
+integrations
+```
+
+Evitar:
+
+```text
+models → services
+models → routes
+repositories → services
+repositories → routes
+services → routes
+schemas → routes
+integrations → routes
+routes → repositories
+```
+
+---
+
+## 19. Imports y archivos `__init__.py`
+
+Los archivos `__init__.py` no deben utilizarse para reexportar clases,
+funciones, schemas, modelos, enums ni otros símbolos definidos en módulos del
+paquete.
+
+No añadir imports de reexportación ni declaraciones `__all__` a estos archivos.
+Cuando un módulo necesite un símbolo, debe importarlo mediante la ruta completa
+del archivo donde se encuentra definido.
+
+Usar:
+
+```python
+from app.domains.users.models import User
+from app.domains.users.schemas import UserResponse
+```
+
+No usar:
+
+```python
+from app.domains.users import User, UserResponse
+```
+
+Como regla general, los archivos `__init__.py` deben permanecer vacíos, salvo
+que exista una necesidad técnica explícita que no consista en crear una fachada
+de imports.
+
+---
+
+## 20. Orden de construcción de un backend nuevo
+
+### Etapa horizontal: todos los dominios a la vez
+
+1. Models de todas las tablas y una única migración inicial.
+2. Validadores reutilizables en `shared/services/validators.py`.
+3. Schemas de todos los dominios, en dos rondas:
+   - Ronda 1: `Create`, `Update`, `Response` y `ResponseAudit`.
+   - Ronda 2: `ListItem` y `Detail` de los dominios con foreign keys, y
+     `DetailCreate` de los dominios que creen su árbol en un solo paso.
+
+   Cada ronda se valida con sus tests de schemas.
+
+Esta etapa es horizontal porque models y schemas son declarativos y
+dependen entre sí: un `Detail` embebe schemas de otros dominios, y la base
+de datos se diseña y migra completa de una vez.
+
+### Etapa vertical: un dominio por vez
+
+Cada dominio recibe su repository, service, routes, tests y prueba contra la
+base de datos de desarrollo, en este orden:
+
+1. Dominios sin foreign keys, completos.
+2. Primera vuelta de los dominios con foreign keys, de padres a hijos. Un
+   dominio se implementa cuando ya existen los dominios a los que apuntan sus
+   foreign keys.
+   - CRUD completo.
+   - `GET /` devuelve `PaginatedResponse[Response]` y `GET /{id}` devuelve
+     `Response`.
+   - Sin `Relationship()` ni carga de embebidos.
+3. Segunda vuelta de los dominios con foreign keys, de hijos a padres.
+   - Se declaran los `Relationship()`.
+   - El repository carga los embebidos.
+   - `GET /` pasa a `PaginatedResponse[ListItem]` y `GET /{id}` a `Detail`.
+   - `POST /` pasa a recibir `DetailCreate` y responder `Detail`, en los
+     dominios que lo definan.
+   - Cada `Detail` se prueba con datos reales de todo su árbol.
+
+La segunda vuelta no empieza hasta terminar la primera de todos los
+dominios: el `Detail` de un dueño embebe a sus hijos, y solo puede probarse
+con datos reales cuando todos sus hijos ya se pueden crear.
+
+Un dominio sin hijos en otros dominios (solo referencias o jerarquía
+autorreferenciada) puede completar ambas vueltas a la vez.
+
+Entre ambas vueltas se acepta que los dominios con foreign keys no cumplan
+todavía la tabla de schemas por endpoint de §9. El cambio posterior es
+compatible, porque `ListItem` y `Detail` contienen todos los campos de
+`Response`.
+
+Los cambios posteriores a la construcción inicial, como un campo o un
+dominio nuevo, no repiten este orden: se aplican directamente en las capas
+afectadas, con su propia migration.
+
+---
+
+## 21. Reglas para cambios
+
+Antes de modificar código:
+
+1. Revisar el código relacionado.
+2. Reutilizar funciones existentes.
+3. No crear archivos o capas innecesarias.
+4. Mantener SQLModel en persistencia y Pydantic en schemas.
+5. No hacer herencia entre models y schemas.
+6. Mantener queries en repositories y reglas de negocio en services.
+7. Mantener routes pequeñas.
+8. Utilizar el logging global.
+9. Utilizar `Settings` como fuente central de configuración.
+10. Respetar soft delete y auditoría.
+11. Utilizar Alembic para cambios estructurales.
+12. Mantener los nombres oficiales de `app.state`.
+13. No duplicar handlers ni services.
+14. No exponer stack traces ni errores internos fuera de DEBUG.
+15. Elegir la solución más simple compatible con esta arquitectura.
+
+---
+
+## 22. Docker y despliegue
+
+El backend se despliega como una única imagen Docker, válida sin cambios para
+Dokploy (Traefik) y Railway. No crear Dockerfiles por entorno ni usar
+`docker-compose` en producción: PostgreSQL es externo al contenedor.
+
+Archivos:
+
+```text
+Dockerfile
+.dockerignore
+.env.example
+requirements.txt      → solo producción, versiones fijadas con ==
+requirements-dev.txt  → -r requirements.txt + herramientas de desarrollo
+```
+
+Dockerfile:
+
+- Base `python:<versión>-slim`; nunca `alpine` (rompe wheels como asyncpg).
+- Instalar `requirements.txt` antes de copiar el código.
+- Copiar carpetas explícitas (`app`, `migrations`, `seeds`, `alembic.ini`);
+  nunca `COPY . .`.
+- Ejecutar como usuario sin privilegios.
+- `CMD` con `sh -c` para expandir `${PORT:-8000}` y `exec` para que uvicorn
+  sea PID 1; con `--proxy-headers --forwarded-allow-ips='*'`, válido solo
+  detrás del proxy de la plataforma.
+- Sin `--reload` ni `--workers`: una réplica, un proceso.
+- `alembic upgrade head` se ejecuta en el `CMD` antes de uvicorn. Exige una
+  sola réplica; si se escala, la migración pasa a un paso pre-deploy.
+- `HEALTHCHECK` contra `/health` con `urllib`, sin instalar `curl`.
+- Los seeds se incluyen en la imagen pero nunca se ejecutan en el `CMD`.
+
+`/health` vive en `core/system_router.py`, fuera de `/api/v1`, sin
+autenticación. Comprueba PostgreSQL con `app.state.db_engine` y responde `200`
+o `503`.
+
+Los secretos nunca entran en la imagen: `.dockerignore` excluye `.env*`, y se
+configuran como variables de entorno en la plataforma.
+
+`.env.example` usa el formato de `--env-file`: `NOMBRE=valor` sin espacios ni
+comillas y sin comentarios al final de la línea. `Settings` trata una variable
+vacía como no definida.
+
+URLs de PostgreSQL:
+
+- `postgresql+asyncpg://USUARIO:PASSWORD@HOST:PUERTO/BASE`, con los caracteres
+  reservados del password codificados.
+- SSL con `?ssl=require`; nunca `?sslmode=require`.
+- En Supabase, Session Pooler (5432); nunca Transaction Pooler (6543).
+- El engine usa `pool_pre_ping=True`.
+
+La regla de selección de base de §10 debe ser idéntica en la app y en Alembic,
+porque el contenedor migra y sirve con la misma configuración.
+
+Dockerfile de referencia, `.dockerignore`, hosts según la red y checklist:
+`ARCHITECTURE.md`.
+
+---
+
+## 23. Protección de la documentación
+
+Los archivos Markdown no se modifican como efecto secundario de implementar
+un cambio funcional. En particular, `AGENTS.md` y `ARCHITECTURE.md` describen
+convenciones estables y reutilizables de la plantilla, no el detalle de cada
+módulo o tarea.
+
+Crear, modificar o eliminar un dominio, endpoint, campo, schema, repository,
+service, validación, regla de negocio o migration no justifica por sí solo
+cambiar estos documentos. Tampoco deben actualizarse por correcciones locales,
+refactors pequeños o decisiones que solo afecten a un módulo.
+
+Solo se modifican cuando la decisión:
+
+- cambia una regla arquitectónica transversal;
+- será aplicable a los módulos futuros;
+- resulta estable y útil para reutilizar la plantilla en otros servicios; o
+- ha sido solicitada explícitamente como un cambio de documentación.
+
+Antes de modificar un `.md`, comprobar si el cambio pertenece realmente a la
+plantilla. Si es específico de la aplicación o de un dominio, debe quedar en el
+código, tests, migrations o documentación específica de ese dominio, sin
+alterar `AGENTS.md` ni `ARCHITECTURE.md`.
+
+---
+
+## 24. Cuándo consultar `ARCHITECTURE.md`
+
+No leer `ARCHITECTURE.md` antes de cada cambio.
+
+Consultarlo cuando la tarea involucre:
+
+- crear un nuevo dominio;
+- decidir dónde debe vivir una responsabilidad;
+- models, auditoría o soft delete;
+- schemas y validaciones;
+- acceso a PostgreSQL;
+- migraciones Alembic;
+- autenticación o seguridad;
+- integrations;
+- middlewares y exception handlers;
+- cambios en `main.py` o `api.py`;
+- Docker, despliegue o variables de entorno de la plataforma;
+- decisiones arquitectónicas no cubiertas claramente en este archivo.
