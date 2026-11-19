@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import Literal, Self
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field, SecretStr, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 Environment = Literal["development","staging","production","test"]
 
 class Settings(BaseSettings):
@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     APP_VERSION: str = "1.0.0"
     APP_DESCRIPTION: str = """Lorep Ipsum"""
     ENVIRONMENT: Environment = "development"
+    # Si no se define, la documentación (Swagger/ReDoc) sigue a DEBUG.
+    ENABLE_DOCS: bool | None = None
     # =================================
     # Regional
     # =================================
@@ -27,16 +29,22 @@ class Settings(BaseSettings):
     # =================================
     # Seeds
     # =================================
+    SEED_ADMIN_CI_1: str | None = None
+    SEED_ADMIN_PHONE_1: str | None = None
     SEED_ADMIN_EMAIL_1: str | None = None
     SEED_ADMIN_NAME_1: str | None = None
     SEED_ADMIN_LASTNAME_1: str | None = None
     SEED_ADMIN_PASSWORD_1: SecretStr | None = None
 
+    SEED_ADMIN_CI_2: str | None = None
+    SEED_ADMIN_PHONE_2: str | None = None
     SEED_ADMIN_EMAIL_2: str | None = None
     SEED_ADMIN_NAME_2: str | None = None
     SEED_ADMIN_LASTNAME_2: str | None = None
     SEED_ADMIN_PASSWORD_2: SecretStr | None = None
 
+    SEED_ADMIN_CI_3: str | None = None
+    SEED_ADMIN_PHONE_3: str | None = None
     SEED_ADMIN_EMAIL_3: str | None = None
     SEED_ADMIN_NAME_3: str | None = None
     SEED_ADMIN_LASTNAME_3: str | None = None
@@ -47,7 +55,7 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     CSRF_SECRET_KEY: str
     ALGORITHM: Literal["HS256"] = "HS256"
-    # =================================
+  # =================================
     # Cloudinary
     # =================================
     CLOUDINARY_CLOUD_NAME: str | None = None
@@ -67,29 +75,29 @@ class Settings(BaseSettings):
         if not folder:
             raise ValueError(f"Debe configurarse {variable_name} para Cloudinary")
         return folder
-
-    # =================================
-    # Pixabay (solo para seeds)
-    # =================================
-    PIXABAY_API_KEY: SecretStr | None = None
+    #----------------------------------
+    # Resend (correo transaccional)
+    #----------------------------------
+    RESEND_API_KEY: str | None = None
+    RESEND_FROM_EMAIL: str = "Svelpy Support Team <no-reply@mail.svelpy.com>"
+    RESEND_REPLY_TO: str = "soporte@me.svelpy.com"
+    AUTH_FRONTEND_URL: str ="http://localhost:5173"
+    PASSWORD_RESET_TOKEN_EXPIRE_MINUTES: int = Field(default=30, gt=0)
     # =================================
     # CORS
     # =================================
     DEV_ORIGINS: str = "http://localhost:5173,http://localhost:5174,http://localhost:5175"
     PROD_ORIGINS: str | None = None
-
     @property
     def CORS_ORIGINS_LIST(self) -> list[str]:
+
+
         if self.ENVIRONMENT in {"development", "test"}:
             origins = self.DEV_ORIGINS
-            var_name = "DEV_ORIGINS"
         else:
             origins = self.PROD_ORIGINS
-            var_name = "PROD_ORIGINS"
-
         if not origins:
-            raise ValueError(f"Debe configurarse {var_name} para el entorno '{self.ENVIRONMENT}'")
-
+            raise ValueError("Debe configurarse PROD_ORIGINS en producción")
         # El navegador envía el Origin sin "/" final; se normaliza para que coincida.
         return [
             origin.strip().rstrip("/")
@@ -97,7 +105,7 @@ class Settings(BaseSettings):
             if origin.strip().rstrip("/")
         ]
 
-    ACCESS_TOKEN_EXPIRE_MINUTES_DEVELOPMENT: int = Field(default=600, gt=0)
+    ACCESS_TOKEN_EXPIRE_MINUTES_DEVELOPMENT: int = Field(default=10, gt=0)
     ACCESS_TOKEN_EXPIRE_MINUTES_STAGING: int = Field(default=15, gt=0)
     ACCESS_TOKEN_EXPIRE_MINUTES_PRODUCTION: int = Field(default=15, gt=0)
     @property
@@ -132,6 +140,20 @@ class Settings(BaseSettings):
     def DEBUG(self) -> bool:
         return self.ENVIRONMENT == "development"
 
+    @property
+    def DOCS_ENABLED(self) -> bool:
+        if self.ENABLE_DOCS is None:
+            return self.DEBUG
+        return self.ENABLE_DOCS
+
+    @field_validator("ENABLE_DOCS", mode="before")
+    @classmethod
+    def validate_enable_docs(cls, value: object) -> object:
+        # Una variable vacía (ENABLE_DOCS=) equivale a no definirla.
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
     @model_validator(mode="after")
     def validate_security_settings(self) -> Self:
         if len(self.SECRET_KEY.encode("utf-8")) < 32:
@@ -149,8 +171,6 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         case_sensitive=True,
         extra="ignore",
-        # NOMBRE= vacío equivale a no definida (formato de --env-file y Dokploy).
-        env_ignore_empty=True,
     )
     
 @lru_cache
