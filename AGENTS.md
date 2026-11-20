@@ -162,7 +162,7 @@ Los models definen exclusivamente:
 - foreign keys;
 - relaciones;
 - índices;
-- `unique`;
+- unicidad, como índice único parcial sobre registros no eliminados (§5);
 - `nullable`;
 - restricciones persistentes.
 
@@ -192,17 +192,53 @@ updated_by
 
 La consulta de eliminados debe ser explícita.
 
+`GET /{id}/audit` es la consulta explícita de eliminados del CRUD estándar:
+devuelve el registro esté eliminado o no, para que su `deleted_at` y
+`deleted_by` puedan consultarse. Reutiliza el mismo `get` del service, que
+recibe un parámetro explícito (`include_deleted=True`) y lo pasa al
+repository. El valor por defecto sigue siendo `False`, por lo que `GET /{id}`,
+`PATCH`, `DELETE` y el resto de operaciones responden `404` ante un registro
+eliminado.
+
+El parámetro solo desactiva el filtro de soft delete. El alcance de datos
+(§14) se sigue aplicando igual.
+
 Los services son responsables de asignar:
 
 ```text
 created_by
 updated_by
 deleted_by
+created_at
 updated_at
 deleted_at
 ```
 
 cuando corresponda.
+
+### Unicidad con soft delete
+
+La unicidad solo se exige entre registros no eliminados (`is_deleted=False`):
+un registro eliminado no impide que otro reutilice su valor.
+
+- El service la valida consultando solo registros con `is_deleted=False` y
+  responde `409` si ya existe un registro no eliminado con ese valor.
+- En el model se declara como índice único parcial, nunca con `unique=True`,
+  que en PostgreSQL incluiría también los registros eliminados:
+
+```python
+__table_args__ = (
+    Index(
+        "uq_<tabla>_<campo>_not_deleted",
+        "<campo>",
+        unique=True,
+        postgresql_where=text("is_deleted = false"),
+    ),
+)
+```
+
+La validación del service da el error claro; el índice protege ante
+condiciones de carrera.
 
 ### Eliminación con dependientes
 
@@ -211,14 +247,14 @@ lo determina el tipo de foreign key con que lo apuntan (§6):
 
 - Hijos (foreign key de dueño): se eliminan lógicamente en cascada, en la
   misma transacción y con los mismos `deleted_at` y `deleted_by`. Solo afecta
-  a los registros activos.
+  a los registros no eliminados.
 - Registros que lo usan como referencia: bloquean la eliminación con `409`
-  mientras estén activos. Para retirar un registro compartido sin eliminarlo
+  mientras no estén eliminados. Para retirar un registro compartido sin eliminarlo
   se usa `is_visible` u otro estado equivalente.
 - Enlaces N:M sin datos propios (§9): se eliminan lógicamente en cascada al
   eliminar cualquiera de sus extremos.
 - Jerarquía autorreferenciada: la eliminación se bloquea mientras el registro
-  tenga hijos activos.
+  tenga hijos no eliminados.
 
 La cascada la coordina el service del registro eliminado; los repositories
 exponen las operaciones de marcado y no hacen commit. No se usa
@@ -569,11 +605,12 @@ hay cambios. Las operaciones que no crean ni modifican un recurso por su id,
 como subir un archivo, emitir tokens o reemplazar un enlace N:M, conservan su
 propia respuesta.
 
-`GET /{id}/audit` expone los campos de auditoría autorizados. Cuando
-`GET /{id}` y `GET /{id}/audit` recuperan el mismo registro y aplican las
-mismas reglas de negocio, deben reutilizar el mismo `get`; la diferencia queda
-en el `response_model`, los permisos de acceso, la información expuesta y las
-relaciones que el repository carga para el `Detail`.
+`GET /{id}/audit` expone los campos de auditoría autorizados e incluye los
+registros eliminados (§5). Cuando `GET /{id}` y `GET /{id}/audit` recuperan
+el mismo registro y aplican las mismas reglas de negocio, deben reutilizar el
+mismo `get`; la diferencia queda en el `response_model`, los permisos de
+acceso, la información expuesta, las relaciones que el repository carga para
+el `Detail` y `include_deleted=True` en `audit`.
 
 `GET /me` y `PATCH /me` deben reutilizar `get` y `update` cuando la lógica sea equivalente.
 
@@ -911,10 +948,11 @@ tenga alguna acción sobre él en la matriz, responder:
    alcance, igual que se prueba el `403` de la primera puerta.
 
 Las comprobaciones de integridad no aplican el alcance, porque protegen los
-datos y no la vista del actor. Consultan siempre todas las filas activas:
+datos y no la vista del actor. Consultan siempre todas las filas no eliminadas:
 
-- la unicidad, por ejemplo un `get_by_slug` usado para rechazar un duplicado;
-- las referencias activas que bloquean una eliminación con `409` (§5);
+- la unicidad (§5), por ejemplo un `get_by_slug` usado para rechazar un
+  duplicado;
+- las referencias no eliminadas que bloquean una eliminación con `409` (§5);
 - los hijos que se eliminan en cascada (§5).
 
 **Dónde vive el alcance.**
