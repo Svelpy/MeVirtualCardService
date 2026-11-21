@@ -1184,54 +1184,42 @@ ErrorResponse
 
 # 17. API Router
 
-`app/api.py` agrega routers.
+`app/api.py` solo agrega routers; no contiene lógica.
 
 ```text
 api_router
-├── system_router
-└── no_system_router
+├── system_router      → core/system_router.py: / y /health (§4.7)
+└── no_system_router   → prefijo /api/v1
 ```
 
-`no_system_router` usa:
+Cada dominio con routes se incluye en `no_system_router`, nunca directamente en
+`api_router`, porque quedaría fuera de `/api/v1`:
 
-```text
-/api/v1
+```python
+from app.domains.users.routes import router as users_router
+
+no_system_router.include_router(users_router)
 ```
-
-Los routers funcionales se incluyen allí.
-
-`api.py` no contiene lógica de negocio.
 
 ---
 
 # 18. Main
 
-`app/main.py` es el punto de composición.
+`app/main.py` es el punto de composición: crea la aplicación y conecta sus
+piezas. No crea tablas ni contiene CRUD ni lógica de negocio.
 
-Puede:
+## Al importarse
 
 ```text
 get_settings
 setup_logging
-crear FastAPI
-configurar lifespan
-configure_cloudinary
-initialize_database
-check_database_connection
-guardar db_engine
-guardar db_session_factory
+crear FastAPI con su lifespan
 register_all_middlewares
-include api_router
-close_database
+include_router(api_router)
+setup_openapi
 ```
 
-No crea tablas.
-
-No contiene CRUD ni lógica de negocio.
-
 ## Lifespan
-
-Flujo:
 
 ```text
 configure integrations
@@ -1250,17 +1238,8 @@ close_database
 
 ## Uvicorn
 
-Si se conserva ejecución directa:
-
-```python
-if __name__ == "__main__":
-```
-
-usar:
-
-```python
-reload=settings.DEBUG
-```
+La ejecución directa (`if __name__ == "__main__":`) usa `reload=settings.DEBUG`.
+En despliegue la aplicación arranca con el `CMD` de Docker (§25), sin reload.
 
 ---
 
@@ -1516,14 +1495,14 @@ Preferir siempre código explícito, predecible y consistente.
 
 # 25. Docker y despliegue
 
-Las reglas viven en `AGENTS.md` §22. Esta sección contiene la referencia.
+Las reglas viven en `AGENTS.md` §13. Esta sección contiene la referencia.
 
 ## 25.1 Dockerfile de referencia
 
 Copiar esta estructura y adaptar solo las carpetas copiadas:
 
 ```dockerfile
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

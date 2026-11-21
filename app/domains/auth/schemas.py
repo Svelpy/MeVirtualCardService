@@ -23,7 +23,7 @@ class ResetPassword(BaseModel):
     """Restablecimiento de contraseña con el token recibido por correo."""
 
     token: str = Field(min_length=1, max_length=128)
-    new_password: str = Field(min_length=6, max_length=20)
+    new_password: str
 
     @field_validator("token", mode="before")
     @classmethod

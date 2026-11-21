@@ -94,7 +94,7 @@ ROLE_LEVEL: dict[Role, int] = {
 }
 
 
-# Alcance de las ventas (segunda puerta, AGENTS.md §14): estos roles ven y
+# Alcance de las ventas (segunda puerta, AGENTS.md §24): estos roles ven y
 # gestionan todas las ventas; los de VENTA_OWN_SCOPE_ROLES, solo las que
 # registraron. Un rol ausente de ambos grupos no ve ninguna. Los pagos de
 # venta heredan este alcance: se ven y se gestionan a través de su venta.
