@@ -101,6 +101,17 @@ def validator_http_url(value: object) -> str:
     return normalized_url
 
 
+def validator_https_url(value: object) -> str:
+    """Normaliza una URL HTTPS absoluta; rechaza HTTP."""
+    if not isinstance(value, str):
+        raise ValueError("La URL debe ser texto.")
+    normalized_url = value.strip()
+    parsed_url = urlparse(normalized_url)
+    if parsed_url.scheme != "https" or not parsed_url.netloc:
+        raise ValueError("La URL debe ser una dirección HTTPS válida.")
+    return normalized_url
+
+
 # =================================
 # Seguridad
 # =================================
@@ -181,6 +192,16 @@ def validator_positive_money(value: object) -> Decimal:
     if amount == 0:
         raise ValueError("El importe debe ser mayor que cero.")
     return amount
+
+
+def validator_currency_code(value: object) -> str:
+    """Código de moneda ISO 4217: tres letras, normalizado a mayúsculas (BOB, USD)."""
+    if not isinstance(value, str):
+        raise ValueError("La moneda debe ser texto.")
+    normalized_code = value.strip().upper()
+    if not re.fullmatch(r"[A-Z]{3}", normalized_code):
+        raise ValueError("La moneda debe ser un código ISO 4217 de tres letras, por ejemplo USD.")
+    return normalized_code
 
 
 def validator_percentage(value: object) -> Decimal:
@@ -274,6 +295,22 @@ def validator_hex_color(value: object) -> str:
     if not re.fullmatch(r"#[0-9A-F]{6}", normalized_color):
         raise ValueError("El código de color debe tener el formato #RRGGBB.")
     return normalized_color
+
+
+def validator_unique_ids[T](value: list[T]) -> list[T]:
+    """
+    Rechaza ids repetidos en una lista de <X>NestedItem (AGENTS.md §20). Los
+    elementos sin id (nuevos) no cuentan.
+
+    Excepción a mode="before": se usa con field_validator(mode="after"), porque
+    necesita los elementos ya validados para leer su id.
+    """
+    if not isinstance(value, list):
+        raise ValueError("El valor debe ser una lista.")
+    ids = [item_id for item in value if (item_id := getattr(item, "id", None)) is not None]
+    if len(ids) != len(set(ids)):
+        raise ValueError("La lista contiene ids repetidos.")
+    return value
 
 
 def validator_json_object(value: object) -> dict[str, object]:

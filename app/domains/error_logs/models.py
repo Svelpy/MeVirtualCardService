@@ -10,7 +10,6 @@ class ErrorLog(BaseModel, table=True):
     __tablename__ = "errors"
     __table_args__ = (
         Index("ix_errors_created_at", "created_at"),
-        {"schema": "public"},
     )
 
     status: str = Field(default="error", nullable=False)

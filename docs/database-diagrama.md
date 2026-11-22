@@ -13,11 +13,11 @@ erDiagram
 
 	plan {
 		uuid id PK ""
-		varchar codigo UK "10, NOT NULL, free | pro"
+		varchar codigo UK "10, NOT NULL, free | pro | business"
 		varchar nombre "60, NOT NULL"
-		numeric precio "12,2, NOT NULL, mayor o igual a 0, free = 0"
-		char moneda "3, NOT NULL, default BOB, ISO 4217"
-		smallint duracion_dias "NOT NULL, mayor que 0, free = 7, pro = 365"
+		numeric precio "12,2, NOT NULL, mayor o igual a 0, free = 0, pro = 80, business = 200"
+		char moneda "3, NOT NULL, default USD, ISO 4217"
+		smallint duracion_dias "NOT NULL, mayor que 0, free = 7, pro = 365, business = 365"
 		boolean is_visible "NOT NULL, default true"
 	}
 
@@ -28,6 +28,8 @@ erDiagram
 		enum rol "NOT NULL, default user, user | admin | superadmin"
 		uuid plan_id FK "NOT NULL, plan actual"
 		timestamptz plan_vence_at "NOT NULL, se recalcula al registrar un pago; al registrarse = created_at + 7 dias"
+		boolean is_active "NOT NULL, default true, baja sin eliminar; cambia solo con acciones"
+		timestamptz email_verified_at "NULL = sin verificar; vuelve a NULL al cambiar el email"
 	}
 
 	pago {
@@ -61,7 +63,6 @@ erDiagram
 		text logo_empresa_url "NULL, https"
 		enum nombre_empresa_posicion "NOT NULL, default derecha, arriba | abajo | izquierda | derecha | oculto"
 		text cover_url "NULL, https"
-		text qr_tarjeta_url "NULL, https, el QR codifica /t/{id} y redirige al slug actual"
 		text qr_pago_url "NULL, https"
 		boolean is_public "NOT NULL, default false"
 		timestamptz published_at "NULL, obligatorio si is_public"

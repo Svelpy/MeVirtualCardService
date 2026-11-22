@@ -16,6 +16,7 @@ RUN useradd --create-home --uid 1000 appuser
 COPY alembic.ini .
 COPY migrations ./migrations
 COPY seeds ./seeds
+COPY jobs ./jobs
 COPY app ./app
 
 USER appuser

@@ -2,21 +2,95 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 from app.shared.enums import Role
 from app.shared.services.validators import (
+    validator_email,
     validator_non_empty_text,
     validator_password,
 )
 
 
+class UserRegister(BaseModel):
+    """
+    Registro público: crea un usuario con rol user, plan free y el email sin
+    verificar. Sin verificar puede iniciar sesión, pero no publicar su tarjeta.
+    """
+
+    email: EmailStr = Field(max_length=255)
+    password: str
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def validate_email(cls, value: object) -> str:
+        return validator_email(value)
+
+    @field_validator("password", mode="before")
+    @classmethod
+    def validate_password(cls, value: object) -> str:
+        return validator_password(value)
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"example": {"email": "ana@example.com", "password": "ClaveSegura123"}},
+    )
+
+
 class UserLogin(BaseModel):
-    pass
+    email: EmailStr = Field(max_length=255)
+    # Sin reglas de longitud: una contraseña que no cumple la política actual
+    # debe responder 401 como cualquier credencial incorrecta, no 422.
+    password: str = Field(min_length=1, max_length=128)
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def validate_email(cls, value: object) -> str:
+        return validator_email(value)
+
+    @field_validator("password", mode="before")
+    @classmethod
+    def validate_password(cls, value: object) -> str:
+        if not isinstance(value, str):
+            raise ValueError("La contraseña debe ser texto.")
+        return value
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"example": {"email": "ana@example.com", "password": "ClaveSegura123"}},
+    )
 
 
 class ForgotPassword(BaseModel):
-    pass
+    """Siempre responde igual, exista o no el email, para no revelar cuentas."""
+
+    email: EmailStr = Field(max_length=255)
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def validate_email(cls, value: object) -> str:
+        return validator_email(value)
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"example": {"email": "ana@example.com"}},
+    )
+
+
+class VerifyEmail(BaseModel):
+    """Verificación del email con el token recibido por correo."""
+
+    token: str = Field(min_length=1, max_length=128)
+
+    @field_validator("token", mode="before")
+    @classmethod
+    def validate_token(cls, value: object) -> str:
+        return validator_non_empty_text(value)
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"example": {"token": "<token-recibido-por-correo>"}},
+    )
 
 
 class ResetPassword(BaseModel):
@@ -43,6 +117,36 @@ class ResetPassword(BaseModel):
                 "new_password": "NuevaClave123",
             }
         },
+    )
+
+
+class ChangePassword(BaseModel):
+    """
+    Cambio de contraseña del usuario autenticado. Revoca sus otras sesiones y
+    abre una nueva para el dispositivo que la cambió.
+    """
+
+    # La actual no pasa por la política: si no coincide, el service responde 401.
+    current_password: str = Field(min_length=1, max_length=128)
+    new_password: str
+
+    @field_validator("current_password", mode="before")
+    @classmethod
+    def validate_current_password(cls, value: object) -> str:
+        if not isinstance(value, str):
+            raise ValueError("La contraseña debe ser texto.")
+        return value
+
+    @field_validator("new_password", mode="before")
+    @classmethod
+    def validate_new_password(cls, value: object) -> str:
+        return validator_password(value)
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {"current_password": "ClaveSegura123", "new_password": "OtraClaveSegura456"}
+        }
     )
 
 

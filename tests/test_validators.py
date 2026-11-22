@@ -5,11 +5,13 @@ import pytest
 
 from app.shared.services.validators import (
     validator_boolean,
+    validator_currency_code,
     validator_date,
     validator_datetime,
     validator_email,
     validator_hex_color,
     validator_http_url,
+    validator_https_url,
     validator_integer,
     validator_json_object,
     validator_latitude,
@@ -27,6 +29,7 @@ from app.shared.services.validators import (
     validator_slug_source,
     validator_text,
     validator_time,
+    validator_unique_ids,
 )
 
 
@@ -57,6 +60,8 @@ from app.shared.services.validators import (
         (validator_longitude, -68.15, Decimal("-68.15")),
         (validator_hex_color, "ff00aa", "#FF00AA"),
         (validator_json_object, '{"a": 1}', {"a": 1}),
+        (validator_https_url, " https://example.com/a ", "https://example.com/a"),
+        (validator_currency_code, " usd ", "USD"),
     ],
 )
 def test_valor_valido_se_normaliza(validator, value, expected):
@@ -96,6 +101,10 @@ def test_valor_valido_se_normaliza(validator, value, expected):
         (validator_hex_color, "#GG0000"),
         (validator_json_object, "[1, 2]"),
         (validator_json_object, "{no json}"),
+        (validator_https_url, "http://example.com"),
+        (validator_https_url, "https://"),
+        (validator_currency_code, "US"),
+        (validator_currency_code, "U5D"),
     ],
 )
 def test_valor_invalido_lanza_value_error(validator, value):
@@ -110,3 +119,17 @@ def test_valor_invalido_lanza_value_error(validator, value):
 def test_none_no_se_acepta(validator):
     with pytest.raises(ValueError):
         validator(None)
+
+
+class _Item:
+    def __init__(self, item_id):
+        self.id = item_id
+
+
+def test_unique_ids_ignora_los_nuevos_y_rechaza_repetidos():
+    items = [_Item(None), _Item(None), _Item(1), _Item(2)]
+    assert validator_unique_ids(items) == items
+    with pytest.raises(ValueError, match="repetidos"):
+        validator_unique_ids([_Item(1), _Item(1)])
+    with pytest.raises(ValueError):
+        validator_unique_ids("no-es-lista")

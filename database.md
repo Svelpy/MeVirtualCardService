@@ -40,15 +40,15 @@ CREATE TYPE red_social AS ENUM (
 -- Planes y pagos
 -- =================================================================
 
--- Filas fijas: free y pro se siembran en la migración con claves fijas.
--- Un administrador solo ajusta precio, duración y visibilidad.
+-- Filas fijas: free, pro y business se siembran en la migración con claves
+-- fijas. Un administrador ajusta todo menos el código.
 CREATE TABLE plan (
     id            uuid PRIMARY KEY,
-    codigo        varchar(10)   NOT NULL UNIQUE,              -- free | pro
+    codigo        varchar(10)   NOT NULL UNIQUE,              -- free | pro | business
     nombre        varchar(60)   NOT NULL,
-    precio        numeric(12,2) NOT NULL CHECK (precio >= 0), -- free = 0
-    moneda        char(3)       NOT NULL DEFAULT 'BOB',       -- ISO 4217
-    duracion_dias smallint      NOT NULL CHECK (duracion_dias > 0), -- free = 7, pro = 365
+    precio        numeric(12,2) NOT NULL CHECK (precio >= 0), -- free = 0, pro = 80, business = 200
+    moneda        char(3)       NOT NULL DEFAULT 'USD',       -- ISO 4217
+    duracion_dias smallint      NOT NULL CHECK (duracion_dias > 0), -- free = 7, pro = 365, business = 365
     is_visible    boolean       NOT NULL DEFAULT true
 );
 
@@ -60,7 +60,13 @@ CREATE TABLE usuario (
     plan_id       uuid         NOT NULL REFERENCES plan(id),  -- apunto
     -- Estado actual del plan. Lo calcula el service en la misma transacción
     -- que inserta el pago; al registrarse: created_at + duracion_dias de free.
-    plan_vence_at timestamptz  NOT NULL
+    plan_vence_at timestamptz  NOT NULL,
+    -- Baja sin eliminar. Es un estado: solo cambia con endpoints de acción
+    -- (dar de baja / reactivar). Un usuario inactivo no inicia sesión.
+    is_active         boolean     NOT NULL DEFAULT true,
+    -- NULL = email sin verificar. Vuelve a NULL al cambiar el email. Sin
+    -- verificar, el usuario no puede publicar su tarjeta.
+    email_verified_at timestamptz
 );
 
 -- Registro (kardex, §19): solo INSERT. Un reembolso o una anulación es un
@@ -95,7 +101,9 @@ CREATE TABLE tarjeta (
     user_id                  uuid         NOT NULL UNIQUE REFERENCES usuario(id), -- 1 tarjeta por usuario
     -- Se puede editar. Al cambiarlo o al eliminar la tarjeta, el slug anterior
     -- queda libre: los enlaces con el slug viejo dejan de funcionar, pero el QR
-    -- no, porque apunta al id (ver qr_tarjeta_url).
+    -- no. El QR lo genera el frontend y codifica /t/{id}, que redirige al slug
+    -- actual: nunca se rompe al cambiar el slug ni lleva a la tarjeta de otra
+    -- persona.
     slug                     varchar(80)  NOT NULL UNIQUE,
     rubro                    varchar(150) NOT NULL,
     prefijo                  varchar(30),          -- Dr. Dra. Ing.
@@ -109,9 +117,6 @@ CREATE TABLE tarjeta (
     logo_empresa_url         text,                 -- https
     nombre_empresa_posicion  posicion_nombre_empresa NOT NULL DEFAULT 'derecha',
     cover_url                text,                 -- https
-    -- https. El QR codifica /t/{id}, que redirige al slug actual: nunca se
-    -- rompe al cambiar el slug ni lleva a la tarjeta de otra persona.
-    qr_tarjeta_url           text,
     qr_pago_url              text,                 -- https
     is_public                boolean      NOT NULL DEFAULT false,
     published_at             timestamptz,

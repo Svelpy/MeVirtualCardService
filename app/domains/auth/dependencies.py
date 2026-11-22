@@ -14,8 +14,10 @@ from app.shared.errors.exceptions import AppException
 from app.shared.services.permissions import has_permission
 
 
-# auto_error=False permite que el header sea opcional (para endpoints públicos)
-OAUTH2_TOKEN_URL = "api/v1/auth/login"
+# auto_error=False permite que el header sea opcional (para endpoints públicos).
+# El botón Authorize de Swagger envía un formulario OAuth2 (username, password):
+# por eso apunta a /auth/token y no a /auth/login, que recibe JSON.
+OAUTH2_TOKEN_URL = "api/v1/auth/token"
 OAUTH2_REFRESH_URL = "api/v1/auth/refresh"
 OAUTH2_SCHEME_NAME = "BearerAuth"
 OAUTH2_DESCRIPTION = "JWT de acceso enviado mediante Authorization: Bearer."

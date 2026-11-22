@@ -55,11 +55,10 @@ class AuthSession(BaseModel, table=True):
             "revoked_at",
         ),
         Index("ix_auth_sessions_expires_at", "expires_at"),
-        {"schema": "public"},
     )
 
     user_id: UUID = Field(
-        foreign_key="public.usuario.id",
+        foreign_key="usuario.id",
         nullable=False,
     )
     family_id: UUID = Field(
@@ -91,7 +90,7 @@ class AuthSession(BaseModel, table=True):
     )
     replaced_by: UUID | None = Field(
         default=None,
-        foreign_key="public.auth_sessions.id",
+        foreign_key="auth_sessions.id",
         nullable=True,
     )
     user_agent: str | None = Field(default=None, sa_type=Text, nullable=True)
@@ -127,11 +126,66 @@ class PasswordResetToken(BaseModel, table=True):
             ),
         ),
         Index("ix_password_reset_tokens_expires_at", "expires_at"),
-        {"schema": "public"},
     )
 
     user_id: UUID = Field(
-        foreign_key="public.usuario.id",
+        foreign_key="usuario.id",
+        nullable=False,
+    )
+    token_hash: str = Field(
+        sa_type=String(64),
+        nullable=False,
+    )
+    expires_at: datetime = Field(
+        sa_type=DateTime(timezone=True),
+        nullable=False,
+    )
+    used_at: datetime | None = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),
+        nullable=True,
+    )
+    revoked_at: datetime | None = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),
+        nullable=True,
+    )
+
+
+class EmailVerificationToken(BaseModel, table=True):
+    """
+    Token de un solo uso para verificar el email. Al cambiar el email, los
+    tokens pendientes se revocan y se emite uno nuevo para el email nuevo.
+    """
+
+    __tablename__ = "email_verification_tokens"
+    __table_args__ = (
+        CheckConstraint(
+            "expires_at > created_at",
+            name="expiration_after_creation",
+        ),
+        CheckConstraint(
+            "used_at IS NULL OR revoked_at IS NULL",
+            name="used_or_revoked",
+        ),
+        Index(
+            "ux_email_verification_tokens_token_hash",
+            "token_hash",
+            unique=True,
+        ),
+        Index(
+            "ux_email_verification_tokens_user_id_pending",
+            "user_id",
+            unique=True,
+            postgresql_where=text(
+                "used_at IS NULL AND revoked_at IS NULL AND is_deleted = false"
+            ),
+        ),
+        Index("ix_email_verification_tokens_expires_at", "expires_at"),
+    )
+
+    user_id: UUID = Field(
+        foreign_key="usuario.id",
         nullable=False,
     )
     token_hash: str = Field(

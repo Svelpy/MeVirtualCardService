@@ -22,11 +22,22 @@ class Settings(BaseSettings):
     DATABASE_URL: str | None = None
     TEST_DATABASE_URL: str | None = None
     # =================================
-    # Seed del primer usuario
+    # Seed de los superadmins (python -m seeds.superadmin)
     # =================================
-    SEED_ADMIN_EMAIL: str | None = None
-    SEED_ADMIN_NAME: str | None = None
-    SEED_ADMIN_PASSWORD: SecretStr | None = None
+    SEED_SUPERADMIN_1_EMAIL: str | None = None
+    SEED_SUPERADMIN_1_PASSWORD: SecretStr | None = None
+    SEED_SUPERADMIN_2_EMAIL: str | None = None
+    SEED_SUPERADMIN_2_PASSWORD: SecretStr | None = None
+    SEED_SUPERADMIN_3_EMAIL: str | None = None
+    SEED_SUPERADMIN_3_PASSWORD: SecretStr | None = None
+    @property
+    def SEED_SUPERADMINS(self) -> list[tuple[str | None, SecretStr | None]]:
+        """(email, password) de cada superadmin del seed, en orden."""
+        return [
+            (self.SEED_SUPERADMIN_1_EMAIL, self.SEED_SUPERADMIN_1_PASSWORD),
+            (self.SEED_SUPERADMIN_2_EMAIL, self.SEED_SUPERADMIN_2_PASSWORD),
+            (self.SEED_SUPERADMIN_3_EMAIL, self.SEED_SUPERADMIN_3_PASSWORD),
+        ]
     # =================================
     # JWT
     # =================================
@@ -61,6 +72,7 @@ class Settings(BaseSettings):
     RESEND_REPLY_TO: str | None = None
     AUTH_FRONTEND_URL: str = "http://localhost:5173"
     PASSWORD_RESET_TOKEN_EXPIRE_MINUTES: int = Field(default=30, gt=0)
+    EMAIL_VERIFICATION_TOKEN_EXPIRE_HOURS: int = Field(default=48, gt=0)
     # =================================
     # CORS
     # =================================

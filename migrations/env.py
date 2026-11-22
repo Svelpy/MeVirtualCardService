@@ -11,7 +11,26 @@ from sqlmodel import SQLModel
 
 # Todo models.py se importa aquí: un model que no se importa no existe para
 # Alembic, y autogenerate propondría eliminar su tabla. Un import por dominio.
+import app.domains.auth.models  # noqa: F401
 import app.domains.error_logs.models  # noqa: F401
+import app.domains.pago.models  # noqa: F401
+import app.domains.plan.models  # noqa: F401
+import app.domains.tarjeta.models  # noqa: F401
+import app.domains.tarjeta_certificacion.models  # noqa: F401
+import app.domains.tarjeta_contacto.models  # noqa: F401
+import app.domains.tarjeta_educacion.models  # noqa: F401
+import app.domains.tarjeta_faq.models  # noqa: F401
+import app.domains.tarjeta_seccion.models  # noqa: F401
+import app.domains.tarjeta_seo.models  # noqa: F401
+import app.domains.tarjeta_social.models  # noqa: F401
+import app.domains.tarjeta_theme.models  # noqa: F401
+import app.domains.tarjeta_ubicacion.models  # noqa: F401
+import app.domains.ubicacion_horario.models  # noqa: F401
+import app.domains.usuario.models  # noqa: F401
+import app.domains.vitrina.models  # noqa: F401
+import app.domains.vitrina_categoria.models  # noqa: F401
+import app.domains.vitrina_item.models  # noqa: F401
+import app.domains.vitrina_item_imagen.models  # noqa: F401
 from app.core.config import get_settings
 from app.core.database import _get_database_url, get_connect_args
 

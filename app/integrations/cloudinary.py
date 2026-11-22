@@ -1,7 +1,9 @@
 import asyncio
 import re
+from datetime import datetime
 
 import cloudinary
+import cloudinary.api
 import cloudinary.uploader
 from fastapi import UploadFile
 
@@ -22,6 +24,8 @@ MAX_IMAGE_SIZE = 5 * 1024 * 1024  # 5 MB
 UPLOADS_PREFIX = "imagenes"
 PENDING_FOLDER = "pendientes"
 PENDING_TAG = "pendiente"
+# Máximo de public_ids por llamada a delete_resources.
+DELETE_BATCH_SIZE = 100
 
 def configure_cloudinary(settings: Settings) -> None:
     """Configura el SDK si hay credenciales; sin ellas la aplicación arranca igual."""
@@ -214,6 +218,51 @@ class CloudinaryService:
             logger.exception(
                 "No se pudo confirmar imágenes pendientes en Cloudinary: %s", list(destinations)
             )
+
+    @staticmethod
+    async def list_pending_uploads(settings: Settings, created_before: datetime) -> list[dict[str, str]]:
+        """
+        Imágenes que siguen con la etiqueta de pendiente, subidas antes de
+        created_before: {public_id, url} de cada una.
+
+        Solo las de este proyecto y entorno (prefijo de subidas de su carpeta):
+        la cuenta y la etiqueta se comparten entre entornos. Usa la API de
+        administración, que tiene un límite de llamadas por hora.
+        """
+        _ensure_configured()
+        prefix = f"{settings.CLOUDINARY_FOLDER_NAME}/{UPLOADS_PREFIX}/"
+        pending: list[dict[str, str]] = []
+        next_cursor: str | None = None
+        while True:
+            options: dict[str, object] = {"resource_type": "image", "max_results": 500}
+            if next_cursor:
+                options["next_cursor"] = next_cursor
+            response = await asyncio.to_thread(cloudinary.api.resources_by_tag, PENDING_TAG, **options)
+            for resource in response.get("resources", []):
+                created_at = datetime.fromisoformat(resource["created_at"].replace("Z", "+00:00"))
+                if resource["public_id"].startswith(prefix) and created_at < created_before:
+                    pending.append({"public_id": resource["public_id"], "url": resource["secure_url"]})
+            next_cursor = response.get("next_cursor")
+            if not next_cursor:
+                return pending
+
+    @staticmethod
+    async def delete_images(public_ids: list[str]) -> None:
+        """Elimina imágenes por public_id, de a 100 (el máximo de la API por llamada)."""
+        if not public_ids:
+            return
+        _ensure_configured()
+        for start in range(0, len(public_ids), DELETE_BATCH_SIZE):
+            batch = public_ids[start : start + DELETE_BATCH_SIZE]
+            await asyncio.to_thread(cloudinary.api.delete_resources, batch, resource_type="image", type="upload")
+
+    @staticmethod
+    async def remove_pending_tag(public_ids: list[str]) -> None:
+        """Quita la etiqueta de pendiente: la imagen ya pertenece a un registro."""
+        if not public_ids:
+            return
+        _ensure_configured()
+        await asyncio.to_thread(cloudinary.uploader.remove_tag, PENDING_TAG, public_ids)
 
     @staticmethod
     async def safe_delete_image(image_url: str) -> bool:

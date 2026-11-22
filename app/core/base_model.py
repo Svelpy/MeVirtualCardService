@@ -1,7 +1,9 @@
 from datetime import datetime, timezone
+from enum import Enum
 from uuid import UUID, uuid4
 
 from sqlalchemy import DateTime
+from sqlalchemy import Enum as SAEnum
 from sqlmodel import Field, SQLModel
 
 
@@ -18,6 +20,19 @@ SQLModel.metadata.naming_convention = {
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def enum_type(enum_class: type[Enum], name: str) -> SAEnum:
+    """
+    Tipo ENUM de PostgreSQL con el nombre de database.md. Guarda el valor de
+    cada miembro ("user"), no su nombre ("USER"), que es lo que SQLAlchemy
+    haría por defecto.
+    """
+    return SAEnum(
+        enum_class,
+        name=name,
+        values_callable=lambda members: [member.value for member in members],
+    )
 
 
 class BaseModel(SQLModel):

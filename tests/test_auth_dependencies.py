@@ -58,11 +58,11 @@ async def get(url: str, bearer: str | None = None) -> httpx.Response:
 async def test_con_permiso_construye_el_actor_desde_el_token():
     response = await get("/leer", token(Role.ADMIN))
     assert response.status_code == 200
-    assert response.json() == {"id": str(USER_ID), "role": "ADMIN", "state": str(USER_ID)}
+    assert response.json() == {"id": str(USER_ID), "role": "admin", "state": str(USER_ID)}
 
 
 async def test_sin_la_accion_responde_403():
-    response = await get("/crear", token(Role.ADMIN))
+    response = await get("/crear", token(Role.USER))
     assert response.status_code == 403
     assert response.json()["code"] == "PERMISSION_DENIED"
 
