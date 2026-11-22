@@ -24,12 +24,24 @@ PENDING_FOLDER = "pendientes"
 PENDING_TAG = "pendiente"
 
 def configure_cloudinary(settings: Settings) -> None:
+    """Configura el SDK si hay credenciales; sin ellas la aplicación arranca igual."""
+    if not (settings.CLOUDINARY_CLOUD_NAME and settings.CLOUDINARY_API_KEY and settings.CLOUDINARY_API_SECRET):
+        logger.info("Cloudinary no está configurado: las operaciones de imagen no estarán disponibles.")
+        return
     cloudinary.config(
         cloud_name=settings.CLOUDINARY_CLOUD_NAME,
         api_key=settings.CLOUDINARY_API_KEY,
         api_secret=settings.CLOUDINARY_API_SECRET,
         secure=True,
     )
+
+
+def _ensure_configured() -> None:
+    if not cloudinary.config().api_key:
+        raise RuntimeError(
+            "Cloudinary no está configurado: faltan CLOUDINARY_CLOUD_NAME, "
+            "CLOUDINARY_API_KEY o CLOUDINARY_API_SECRET."
+        )
 
 class CloudinaryService:
     @staticmethod
@@ -99,6 +111,8 @@ class CloudinaryService:
 
         Retorna la URL segura y el public_id generado por Cloudinary.
         """
+        _ensure_configured()
+
         # Validar Content-Type
         if not file.content_type or not file.content_type.startswith("image/"):
             raise AppException("El archivo debe ser una imagen", 400,code=ErrorCode.INVALID_IMAGE)
@@ -156,7 +170,8 @@ class CloudinaryService:
         public_id = CloudinaryService._extract_public_id(image_url)
         if not public_id:
             return False
-            
+
+        _ensure_configured()
         response = await asyncio.to_thread(
             cloudinary.uploader.destroy,
             public_id,
@@ -179,6 +194,7 @@ class CloudinaryService:
         if not destinations:
             return
         try:
+            _ensure_configured()
             public_ids = {url: CloudinaryService._extract_public_id(url) for url in destinations}
             await asyncio.gather(
                 *(

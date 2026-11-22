@@ -470,7 +470,7 @@ autenticación. Comprueba PostgreSQL y responde `200` o `503`.
   La conexión directa requiere IPv6.
 
 Dockerfile de referencia, `.dockerignore` completo, hosts según la red y
-checklist: `ARCHITECTURE.md` §25.
+checklist: `ARCHITECTURE.md` §13.
 
 ---
 
@@ -507,27 +507,23 @@ las migrations o la documentación de ese dominio.
 
 ## 16. Cuándo consultar `ARCHITECTURE.md`
 
-`ARCHITECTURE.md` amplía este archivo con referencias y ejemplos. No se lee
-completo ni antes de cada cambio: solo la sección del tema de la tarea.
+`ARCHITECTURE.md` usa la misma numeración que este archivo: su §N amplía el §N
+de aquí con el porqué de la regla, ejemplos completos y material de referencia.
+No se lee completo ni antes de cada cambio: solo la sección con el número de la
+regla que se necesita ampliar.
 
-| Tema | Sección de `ARCHITECTURE.md` |
+Conviene consultarlo sobre todo para:
+
+| Necesidad | Sección de `ARCHITECTURE.md` |
 |---|---|
-| Crear un dominio nuevo | §6, §21 |
-| Dónde vive una responsabilidad | §3, §23 |
-| Config y PostgreSQL | §4.3, §4.4 |
-| Alembic | §5 |
-| Autenticación y seguridad | §4.6, §12 |
-| Error logs | §13 |
-| Integrations | §14 |
-| Middlewares y exception handlers | §15 |
-| Shared: enums, permisos, validadores, errores | §16 |
-| `api.py` y `main.py` | §17, §18 |
-| Docker, despliegue y variables de entorno | §25 |
+| Configurar Alembic o escribir una migration a mano | §8 |
+| Copiar el Dockerfile, el `.dockerignore` o el checklist de despliegue | §13 |
+| Ver la clasificación de un sistema completo a partir de su SQL | §17 |
+| Ver models, schemas, services y routes completos de un dominio | §18, §20, §22, §23 |
+| El contrato de `shared/services/sync.py` | §22 |
 
-Models, schemas, validaciones, services, routes y permisos se rigen por
-§17–§25 de este archivo.
-
-Si `ARCHITECTURE.md` contradice este archivo, prevalece `AGENTS.md`.
+`ARCHITECTURE.md` no define reglas nuevas. Si contradice este archivo,
+prevalece `AGENTS.md`.
 
 ---
 
@@ -1433,9 +1429,9 @@ tenga alguna acción sobre él en la matriz:
 
 1. **Una única resolución de alcance por módulo.** Recibe el actor
    (`CurrentUser`) y produce el alcance. La reutilizan todas las lecturas del
-   módulo: `get`, `list`, `get_by_*` y `audit`. Si el alcance necesita un dato
-   del actor que `CurrentUser` no tiene, ese dato se agrega a `CurrentUser` y
-   lo copia `get_current_principal` desde el usuario ya cargado.
+   módulo: `get`, `list`, `get_by_*` y `audit`. `CurrentUser` sale de los
+   claims del access token; si el alcance necesita otro dato del actor, se
+   agrega a los claims y a `CurrentUser`.
 2. **Denegar por defecto.** Un rol no contemplado recibe un alcance vacío, que
    no devuelve ninguna fila. Nunca recibe un alcance "sin filtro".
 3. **Las escrituras también se filtran.** `update`, `delete` y acciones como
@@ -1485,9 +1481,9 @@ class OrderScope:
 
 # services.py: decide el alcance, sin SQL
 def _scope_for(actor: CurrentUser) -> OrderScope:
-    if actor.rol in ORDER_GLOBAL_SCOPE_ROLES:
+    if actor.role in ORDER_GLOBAL_SCOPE_ROLES:
         return OrderScope(all=True)
-    if actor.rol in ORDER_BUSINESS_SCOPE_ROLES:
+    if actor.role in ORDER_BUSINESS_SCOPE_ROLES:
         return OrderScope(business_id=actor.business_id)
     return OrderScope()  # alcance vacío: no devuelve filas
 

@@ -9,9 +9,10 @@ from slowapi.errors import RateLimitExceeded
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.config import Settings
-from app.shared.errors.exceptions import AppException
 from app.core.logging import get_logger
 from app.domains.error_logs.models import ErrorLog
+from app.domains.error_logs.repositories import ErrorLogRepository
+from app.shared.errors.exceptions import AppException
 
 
 logger = get_logger(__name__)
@@ -159,9 +160,9 @@ def register_exception_handlers(app: FastAPI, settings: Settings) -> None:
             session_factory = getattr(request.app.state,"db_session_factory",None)
             if session_factory is None:
                 raise RuntimeError("La fábrica de sesiones no está inicializada")
-            user_id = None
-            if hasattr(request.state, "user"):
-                user_id = request.state.user.id
+            # get_current_principal guarda al actor en request.state.user.
+            current_user = getattr(request.state, "user", None)
+            user_id = current_user.id if current_user is not None else None
 
             error_log = ErrorLog(
                 status="error",
@@ -174,9 +175,10 @@ def register_exception_handlers(app: FastAPI, settings: Settings) -> None:
                 user_id=user_id,
             )
 
+            # Sesión propia: la de la request puede tener la transacción rota.
             async with session_factory() as session:
-                session.add(error_log)
-                await session.commit()    
+                ErrorLogRepository.add(session, error_log)
+                await session.commit()
         except Exception:
             logger.exception("No se pudo persistir el error interno en PostgreSQL")
 

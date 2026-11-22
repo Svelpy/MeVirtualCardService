@@ -6,9 +6,11 @@ from app.core.logging import get_logger
 logger = get_logger(__name__)
 
 def configure_resend(settings: Settings) -> None:
-    """Configura el SDK de Resend durante el arranque de la aplicación."""
-    if settings.RESEND_API_KEY:
-        resend.api_key = settings.RESEND_API_KEY
+    """Configura el SDK si hay API key; sin ella la aplicación arranca igual."""
+    if not settings.RESEND_API_KEY:
+        logger.info("Resend no está configurado: no se enviarán correos.")
+        return
+    resend.api_key = settings.RESEND_API_KEY
 
 
 class ResendService:
@@ -37,8 +39,11 @@ class ResendService:
             "to": to,
             "subject": subject,
             "html": html,
-            "reply_to": reply_to or settings.RESEND_REPLY_TO,
         }
+
+        effective_reply_to = reply_to or settings.RESEND_REPLY_TO
+        if effective_reply_to:
+            params["reply_to"] = effective_reply_to
 
         if text is not None:
             params["text"] = text

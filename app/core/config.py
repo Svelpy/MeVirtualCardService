@@ -10,45 +10,23 @@ class Settings(BaseSettings):
     # =================================
     # Application
     # =================================
-    APP_NAME: str = "Proyect_Service_API"
+    APP_NAME: str = "Backend API"
     APP_VERSION: str = "1.0.0"
-    APP_DESCRIPTION: str = """Lorep Ipsum"""
+    APP_DESCRIPTION: str = "API del backend."
     ENVIRONMENT: Environment = "development"
-    # Si no se define, la documentación (Swagger/ReDoc) sigue a DEBUG.
-    ENABLE_DOCS: bool | None = None
-    # =================================
-    # Regional
-    # =================================
-    # Bolivia (UTC-4) no aplica horario de verano: un desplazamiento fijo es exacto.
-    TIMEZONE_OFFSET_HOURS: int = Field(default=-4, ge=-12, le=14)
+    # Swagger/ReDoc. Si no se define, sigue a DEBUG (solo en development).
+    DOCS_ENABLED: bool | None = None
     # =================================
     # PostgreSQL
     # =================================
     DATABASE_URL: str | None = None
     TEST_DATABASE_URL: str | None = None
     # =================================
-    # Seeds
+    # Seed del primer usuario
     # =================================
-    SEED_ADMIN_CI_1: str | None = None
-    SEED_ADMIN_PHONE_1: str | None = None
-    SEED_ADMIN_EMAIL_1: str | None = None
-    SEED_ADMIN_NAME_1: str | None = None
-    SEED_ADMIN_LASTNAME_1: str | None = None
-    SEED_ADMIN_PASSWORD_1: SecretStr | None = None
-
-    SEED_ADMIN_CI_2: str | None = None
-    SEED_ADMIN_PHONE_2: str | None = None
-    SEED_ADMIN_EMAIL_2: str | None = None
-    SEED_ADMIN_NAME_2: str | None = None
-    SEED_ADMIN_LASTNAME_2: str | None = None
-    SEED_ADMIN_PASSWORD_2: SecretStr | None = None
-
-    SEED_ADMIN_CI_3: str | None = None
-    SEED_ADMIN_PHONE_3: str | None = None
-    SEED_ADMIN_EMAIL_3: str | None = None
-    SEED_ADMIN_NAME_3: str | None = None
-    SEED_ADMIN_LASTNAME_3: str | None = None
-    SEED_ADMIN_PASSWORD_3: SecretStr | None = None
+    SEED_ADMIN_EMAIL: str | None = None
+    SEED_ADMIN_NAME: str | None = None
+    SEED_ADMIN_PASSWORD: SecretStr | None = None
     # =================================
     # JWT
     # =================================
@@ -79,9 +57,9 @@ class Settings(BaseSettings):
     # Resend (correo transaccional)
     #----------------------------------
     RESEND_API_KEY: str | None = None
-    RESEND_FROM_EMAIL: str = "Svelpy Support Team <no-reply@mail.svelpy.com>"
-    RESEND_REPLY_TO: str = "soporte@me.svelpy.com"
-    AUTH_FRONTEND_URL: str ="http://localhost:5173"
+    RESEND_FROM_EMAIL: str | None = None
+    RESEND_REPLY_TO: str | None = None
+    AUTH_FRONTEND_URL: str = "http://localhost:5173"
     PASSWORD_RESET_TOKEN_EXPIRE_MINUTES: int = Field(default=30, gt=0)
     # =================================
     # CORS
@@ -140,19 +118,19 @@ class Settings(BaseSettings):
     def DEBUG(self) -> bool:
         return self.ENVIRONMENT == "development"
 
-    @property
-    def DOCS_ENABLED(self) -> bool:
-        if self.ENABLE_DOCS is None:
-            return self.DEBUG
-        return self.ENABLE_DOCS
-
-    @field_validator("ENABLE_DOCS", mode="before")
+    @field_validator("DOCS_ENABLED", mode="before")
     @classmethod
-    def validate_enable_docs(cls, value: object) -> object:
-        # Una variable vacía (ENABLE_DOCS=) equivale a no definirla.
+    def validate_docs_enabled(cls, value: object) -> object:
+        # Una variable vacía (DOCS_ENABLED=) equivale a no definirla.
         if isinstance(value, str) and not value.strip():
             return None
         return value
+
+    @model_validator(mode="after")
+    def resolve_docs_enabled(self) -> Self:
+        if self.DOCS_ENABLED is None:
+            self.DOCS_ENABLED = self.DEBUG
+        return self
 
     @model_validator(mode="after")
     def validate_security_settings(self) -> Self:

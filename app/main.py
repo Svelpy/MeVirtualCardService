@@ -11,6 +11,7 @@ from app.core.database import (
 from app.core.logging import setup_logging
 from app.core.openapi import setup_openapi
 from app.integrations.cloudinary import configure_cloudinary
+from app.integrations.resend import configure_resend
 from app.middlewares import register_all_middlewares
 from app.api import api_router
 
@@ -22,6 +23,7 @@ setup_logging(settings)
 async def lifespan(app: FastAPI):
     """Inicializa y libera los recursos de la aplicación."""
     configure_cloudinary(settings)
+    configure_resend(settings)
 
     database_engine = None
     session_factory = None
@@ -43,9 +45,9 @@ app = FastAPI(
     version=settings.APP_VERSION,
     description=settings.APP_DESCRIPTION,
     lifespan=lifespan,
-    docs_url="/docs" if settings.DEBUG else None,
-    redoc_url="/redoc" if settings.DEBUG else None,
-    openapi_url="/openapi.json" if settings.DEBUG else None,
+    docs_url="/docs" if settings.DOCS_ENABLED else None,
+    redoc_url="/redoc" if settings.DOCS_ENABLED else None,
+    openapi_url="/openapi.json" if settings.DOCS_ENABLED else None,
 )
 
 # Registrar middlewares

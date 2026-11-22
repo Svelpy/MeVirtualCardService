@@ -79,7 +79,6 @@ class CurrentUser(BaseModel):
 
     id: UUID
     role: Role
-    sucursal_id: UUID | None
 
     model_config = ConfigDict(extra="forbid")
 

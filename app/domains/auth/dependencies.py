@@ -1,18 +1,13 @@
 from collections.abc import Awaitable, Callable
 from typing import Annotated
 
-from fastapi import Depends, status
+from fastapi import Depends, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import ValidationError
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
-from app.core.database import get_db
 from app.core.security import decode_access_token
 from app.domains.auth.schemas import CurrentUser, TokenClaims
-from app.domains.auth.services import AuthService
-from app.domains.usuarios.models import Usuario
-from app.domains.usuarios.repositories import UsuarioRepository
 from app.shared.enums import Action, Module, Role
 from app.shared.errors.codes import ErrorCode
 from app.shared.errors.exceptions import AppException
@@ -32,7 +27,6 @@ oauth2_scheme = OAuth2PasswordBearer(
     description=OAUTH2_DESCRIPTION,
     auto_error=False,
 )
-
 
 
 def _get_token_claims(token: str | None, settings: Settings) -> TokenClaims:
@@ -66,7 +60,7 @@ def _ensure_permission(
     module: Module,
     action: Action,
 ) -> None:
-    if not has_permission(current_user.rol, module, action):
+    if not has_permission(current_user.role, module, action):
         raise AppException(
             "No tienes permisos para realizar esta acción.",
             status.HTTP_403_FORBIDDEN,
@@ -78,7 +72,7 @@ def _ensure_role(
     current_user: CurrentUser,
     allowed_roles: set[Role] | frozenset[Role],
 ) -> None:
-    if current_user.rol not in allowed_roles:
+    if current_user.role not in allowed_roles:
         raise AppException(
             "No tienes permisos para realizar esta acción.",
             status.HTTP_403_FORBIDDEN,
@@ -86,53 +80,35 @@ def _ensure_role(
         )
 
 
-async def _load_current_user(
-    token: str | None,
-    settings: Settings,
-    db_session: AsyncSession,
-) -> Usuario:
-    claims = _get_token_claims(token, settings)
-    user = await UsuarioRepository(db_session).get_by_id(claims.sub)
-    if user is None:
-        raise AppException(
-            "Token inválido",
-            status.HTTP_401_UNAUTHORIZED,
-            ErrorCode.TOKEN_INVALID,
-        )
-    AuthService.validate_user_access(user)
-    return user
-
-
-async def get_current_user(
-    token: Annotated[str | None, Depends(oauth2_scheme)],
-    settings: Annotated[Settings, Depends(get_settings)],
-    db_session: Annotated[AsyncSession, Depends(get_db)],
-) -> Usuario:
-    return await _load_current_user(token, settings, db_session)
+def _principal_from_claims(request: Request, claims: TokenClaims) -> CurrentUser:
+    """
+    El actor sale del token, sin consultar la base: los permisos funcionan sin
+    ningún dominio de usuarios. Un cambio de rol o una eliminación rige cuando
+    el access token vence (ACCESS_TOKEN_EXPIRE_MINUTES). Un proyecto que
+    necesite revocarlo al instante carga aquí al usuario desde su repository.
+    """
+    current_user = CurrentUser(id=claims.sub, role=claims.role)
+    # Lo usa el handler global para registrar quién provocó un error.
+    request.state.user = current_user
+    return current_user
 
 
 async def get_current_principal(
-    user: Annotated[Usuario, Depends(get_current_user)],
-) -> CurrentUser:
-    return CurrentUser(id=user.id, rol=user.rol)
-
-
-async def get_current_user_optional(
+    request: Request,
     token: Annotated[str | None, Depends(oauth2_scheme)],
     settings: Annotated[Settings, Depends(get_settings)],
-    db_session: Annotated[AsyncSession, Depends(get_db)],
-) -> Usuario | None:
-    if token is None:
-        return None
-    return await _load_current_user(token, settings, db_session)
+) -> CurrentUser:
+    return _principal_from_claims(request, _get_token_claims(token, settings))
 
 
 async def get_current_principal_optional(
-    user: Annotated[Usuario | None, Depends(get_current_user_optional)],
+    request: Request,
+    token: Annotated[str | None, Depends(oauth2_scheme)],
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> CurrentUser | None:
-    if user is None:
+    if token is None:
         return None
-    return CurrentUser(id=user.id, rol=user.rol)
+    return _principal_from_claims(request, _get_token_claims(token, settings))
 
 
 def require_permission(

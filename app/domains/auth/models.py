@@ -24,20 +24,20 @@ class AuthSession(BaseModel, table=True):
         ),
         CheckConstraint(
             "expires_at > created_at",
-            name="ck_auth_sessions_expiration_after_creation",
+            name="expiration_after_creation",
         ),
         CheckConstraint(
             "(revoked_at IS NULL AND revocation_reason IS NULL) OR "
             "(revoked_at IS NOT NULL AND revocation_reason IS NOT NULL)",
-            name="ck_auth_sessions_revocation_consistency",
+            name="revocation_consistency",
         ),
         CheckConstraint(
             "replaced_by IS NULL OR revoked_at IS NOT NULL",
-            name="ck_auth_sessions_replacement_requires_revocation",
+            name="replacement_requires_revocation",
         ),
         CheckConstraint(
             "replaced_by IS NULL OR replaced_by <> id",
-            name="ck_auth_sessions_replacement_not_self",
+            name="replacement_not_self",
         ),
         Index(
             "ux_auth_sessions_refresh_token_hash",
@@ -107,11 +107,11 @@ class PasswordResetToken(BaseModel, table=True):
     __table_args__ = (
         CheckConstraint(
             "expires_at > created_at",
-            name="ck_password_reset_tokens_expiration_after_creation",
+            name="expiration_after_creation",
         ),
         CheckConstraint(
             "used_at IS NULL OR revoked_at IS NULL",
-            name="ck_password_reset_tokens_used_or_revoked",
+            name="used_or_revoked",
         ),
         Index(
             "ux_password_reset_tokens_token_hash",

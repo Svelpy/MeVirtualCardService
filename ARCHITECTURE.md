@@ -1,337 +1,499 @@
 # ARCHITECTURE.md
 
-Documento de referencia de arquitectura del backend.
+Referencia ampliada de `AGENTS.md`. Explica el porqué de sus reglas, muestra
+ejemplos completos y guarda el material de referencia (Dockerfile, plantillas,
+migrations) que no cabe en las reglas.
 
-Este archivo amplía las reglas resumidas en `AGENTS.md`. No es necesario leerlo para cada cambio pequeño. Debe consultarse cuando se trabaje sobre arquitectura, persistencia, nuevos dominios, seguridad, integrations, middlewares o decisiones estructurales.
+Cómo se relacionan los dos documentos:
 
----
-
-# 1. Objetivo
-
-La aplicación busca una arquitectura simple, explícita y modular.
-
-La estructura separa el acceso a datos mediante repositories explícitos por
-dominio. No introduce capas adicionales como controllers, managers o use cases
-mientras no exista una necesidad real.
-
-Arquitectura funcional principal:
-
-```text
-routes
-↓
-services
-↓
-repositories
-↓
-models
-```
-
-Componentes auxiliares:
-
-```text
-schemas
-dependencies
-integrations
-shared
-core
-```
+- **Misma numeración.** El §N de este archivo amplía el §N de `AGENTS.md`. Para
+  ampliar una regla se lee solo la sección con su mismo número.
+- **No define reglas nuevas.** Todo lo obligatorio está en `AGENTS.md`; aquí
+  solo hay explicaciones, ejemplos y referencias. Si ambos documentos se
+  contradicen, prevalece `AGENTS.md`.
+- **Un ejemplo común.** Las secciones de la API (§17–§25) usan el mismo
+  sistema de pedidos, para que cada ejemplo continúe el anterior.
 
 ---
 
-# 2. Stack
+## 1. Stack
 
-- Python
-- FastAPI
-- PostgreSQL
-- SQLModel
-- SQLAlchemy async
-- asyncpg
-- Pydantic
-- Alembic
+Versiones fijadas en `requirements.txt`:
 
-Persistencia y API permanecen desacopladas:
+| Pieza | Paquete | Por qué |
+|---|---|---|
+| Lenguaje | Python 3.14 | Sintaxis de tipos moderna (`X \| None`, `Self`) y soporte de todas las dependencias |
+| API | `fastapi`, `uvicorn[standard]` | Validación y OpenAPI a partir de los tipos; ASGI async |
+| Base de datos | PostgreSQL | Índices parciales, triggers y `SELECT ... FOR UPDATE`, que usan las reglas de §19 |
+| ORM | `sqlmodel` sobre `SQLAlchemy[asyncio]` 2.x | Models declarativos y sesión async |
+| Driver | `asyncpg` | Driver async nativo de PostgreSQL |
+| Schemas | `pydantic` 2 | Validación de entrada y salida |
+| Configuración | `pydantic-settings` | `Settings` tipado a partir de variables de entorno |
+| Migraciones | `alembic` | Versionado del esquema |
+| JWT | `python-jose` | Firma HS256 de los access tokens |
+| Contraseñas | `pwdlib[argon2]` | Argon2, el algoritmo que recomienda OWASP |
+| HTTP saliente | `httpx` | Cliente async; `requests` bloquearía el event loop |
+| Tests | `pytest`, `pytest-asyncio` | Tests async con `asyncio_mode = auto` |
 
-```text
-models.py  → SQLModel
-schemas.py → Pydantic
-```
+**Por qué async.** Una API pasa la mayor parte del tiempo esperando a
+PostgreSQL o a un proveedor externo. Con async, un mismo proceso atiende otras
+peticiones durante esa espera. El costo es que la sesión no puede cargar
+relaciones de forma implícita (§18).
 
-Nunca existe herencia entre ambas capas.
+**Por qué models y schemas no se heredan entre sí.** Un model describe la
+tabla; un schema describe un contrato HTTP. Si uno hereda del otro:
+
+- un campo interno, como `password_hash`, puede terminar en una respuesta;
+- un cambio en la API obliga a una migration, y al revés;
+- un endpoint no puede aceptar o devolver una forma distinta de la tabla.
+
+La duplicación de algunos campos es el precio de mantener las dos capas
+independientes.
 
 ---
 
-# 3. Estructura de la aplicación
+## 2. Estructura de `app/`
 
 ```text
 app/
-├── __init__.py
-├── api.py
-├── main.py
-│
+├── api.py                     → agrega routers (§12)
+├── main.py                    → compone la aplicación (§12)
 ├── core/
-│   ├── __init__.py
-│   ├── base_model.py
-│   ├── config.py
-│   ├── database.py
-│   ├── logging.py
-│   ├── security.py
-│   └── system_router.py
-│
+│   ├── base_model.py          → BaseModel con id y auditoría (§18)
+│   ├── config.py              → Settings y get_settings (§6)
+│   ├── database.py            → engine, sesiones y get_db (§7)
+│   ├── logging.py             → setup_logging y get_logger (§9)
+│   ├── openapi.py             → conserva los ejemplos de los schemas (§20)
+│   ├── security.py            → primitivas de hashing, JWT, CSRF y tokens (§24)
+│   └── system_router.py       → GET / y GET /health (§13)
 ├── domains/
-│   ├── __init__.py
-│   ├── auth/
-│   │   ├── __init__.py
-│   │   ├── dependencies.py
-│   │   ├── models.py
-│   │   ├── schemas.py
-│   │   ├── repositories.py
-│   │   ├── services.py
-│   │   └── routes.py
-│   ├── error_logs/
-│   │   ├── __init__.py
-│   │   ├── models.py
-│   │   └── repositories.py
-│   └── <domain>/
-│       ├── __init__.py
+│   ├── auth/                  → dependencies.py, models de sesiones y tokens; service y routes se construyen (§24)
+│   ├── error_logs/            → ErrorLog y su repository (obligatorio)
+│   └── <dominio>/
 │       ├── models.py
 │       ├── schemas.py
 │       ├── repositories.py
 │       ├── services.py
 │       └── routes.py
-│
-├── integrations/
-│   ├── __init__.py
-│   ├── cloudinary.py
-│   └── <integration>.py
-│
-├── middlewares/
-│   ├── __init__.py
-│   ├── cors.py
-│   ├── exception_handlers.py
-│   └── limiter.py
-│
+├── integrations/              → un archivo por proveedor (§11)
+├── middlewares/               → CORS, limiter y exception handlers (§10)
 └── shared/
-    ├── __init__.py
-    ├── enums.py
-    ├── services/
-    │   ├── __init__.py
-    │   ├── permissions.py
-    │   ├── slug.py
-    │   └── validators.py
+    ├── enums.py               → Role, Module, Action y enums del dominio
+    ├── errors/
+    │   ├── codes.py           → ErrorCode
+    │   └── exceptions.py      → AppException
     ├── schemas/
-    │   ├── __init__.py
-    │   ├── errors.py
-    │   ├── pagination.py
-    │   └── tree.py
-    └── errors/
-        ├── __init__.py
-        ├── codes.py
-        └── exceptions.py
+    │   ├── base.py            → SchemaBase y AuditMixin (§20)
+    │   ├── errors.py          → ErrorResponse, ERROR_RESPONSES y error_responses (§23)
+    │   ├── pagination.py      → PaginatedResponse (§23)
+    │   └── tree.py            → TreeResponse y TreeNodeResponse (§20)
+    └── services/
+        ├── permissions.py     → matriz de permisos y alcances (§24)
+        ├── slug.py            → generate_slug
+        ├── sync.py            → plan de sincronización de listas (§22)
+        └── validators.py      → validadores object → T (§21)
+```
+
+Fuera de `app/`:
+
+```text
+database.md            → SQL de PostgreSQL del sistema; entrada de §25
+migrations/            → Alembic (§8)
+seeds/                 → datos iniciales que no son Filas fijas; se ejecutan a mano
+tests/
+AGENTS.md
+ARCHITECTURE.md
 ```
 
 ---
 
-# 4. Core
+## 3. Responsabilidades
 
-`core/` contiene infraestructura fundamental de la aplicación.
-
-No contiene lógica funcional de dominios.
-
-## 4.1 Base model
-
-`core/base_model.py` contiene el modelo base de persistencia.
-
-Se implementa con SQLModel y no representa una tabla propia.
-
-Campos comunes:
+### Dónde va cada cosa
 
 ```text
-id
-created_at
-created_by
-updated_at
-updated_by
-is_deleted
-deleted_at
-deleted_by
+Infraestructura            → core/
+Negocio                    → domains/
+Proveedor externo          → integrations/
+HTTP global                → middlewares/
+Código entre dominios      → shared/
 ```
 
-Los modelos concretos heredan de él y declaran `table=True`.
+Dentro de un dominio:
 
-Ejemplo conceptual:
+| Archivo | Contiene | Nunca contiene |
+|---|---|---|
+| `models.py` | Tablas, columnas, índices, relaciones | Lógica HTTP o de negocio |
+| `schemas.py` | Contratos de entrada y salida, validadores de campo | Queries, reglas de negocio |
+| `repositories.py` | Queries, filtros, alcance, carga de relaciones | Reglas de negocio, `commit()` |
+| `services.py` | Reglas de negocio, transacciones, auditoría | Queries SQL, respuestas HTTP |
+| `routes.py` | HTTP: dependencias, parámetros, códigos de estado | Queries, SDKs externos |
+
+### Flujo de una request
+
+```text
+HTTP → route → dependencias (auth, sesión) → schema de entrada
+     → service → repository → PostgreSQL
+     → service → commit y recarga → schema de salida → HTTP
+```
+
+Error esperado y error inesperado:
+
+```text
+service → AppException ─────────────→ handler → ErrorResponse 4xx
+código  → Exception no controlada ──→ handler global → logger + ErrorLog → 500 genérico
+```
+
+### `auth/` y `error_logs/`
+
+`auth/dependencies.py` expone las dependencias de autorización (§24):
+
+```text
+get_current_principal            → CurrentUser a partir del access token
+get_current_principal_optional   → None si no hay token
+require_permission(Module, Action)
+require_role(*roles)
+```
+
+`oauth2_scheme` usa `auto_error=False`: el token es opcional en la capa de
+OpenAPI y cada dependencia decide si exige o no autenticación.
+
+`CurrentUser` se construye con el `sub` y el `role` del token, sin consultar la
+base: los permisos funcionan sin ningún dominio de usuarios. Un cambio de rol o
+una eliminación rige cuando vence el access token (10 a 15 minutos según
+`ACCESS_TOKEN_EXPIRE_MINUTES`). Un proyecto que necesite revocar el acceso al
+instante carga al usuario desde su repository en `get_current_principal`.
+
+`auth/models.py` y los schemas de login, refresh y recuperación son la base del
+dominio `auth` completo. `models.py` apunta a la tabla `usuario`: se importa en
+`migrations/env.py` solo cuando ese dominio existe.
+
+`error_logs/` no tiene routes ni schemas mientras no exista una API para
+consultarlos. `ErrorLog` guarda `status`, `message`, `stack`, `path`, `method`,
+`ip_address`, `user_agent` y `user_id`.
+
+### Por qué no hay más capas
+
+No se agregan controllers, managers, use cases, repositories genéricos ni
+clases base de repository. Cada capa extra es un lugar más donde buscar la
+lógica, y sin una necesidad real solo agrega indirección.
+
+---
+
+## 4. Imports entre capas
+
+```text
+routes ──→ services ──→ repositories ──→ models
+  │           │
+  │           └──→ integrations
+  └──→ schemas ←── services
+core y shared ←── cualquier capa
+```
+
+Por qué cada prohibición:
+
+| Prohibido | Qué rompería |
+|---|---|
+| `models → services`, `models → routes` | Imports circulares al arrancar: todo importa los models |
+| `repositories → services` | El repository dejaría de ser reutilizable por varios services |
+| `services → routes` | El service dependería de HTTP y no podría usarse desde un job o un test |
+| `routes → repositories` | La route se saltaría permisos, alcance y soft delete del service |
+| `schemas → routes`, `integrations → routes` | Dependencias hacia arriba, sin ningún uso legítimo |
+
+Cuando un repository necesita un tipo que también usa el service, el tipo se
+define en el repository. Así lo hace el alcance de datos: `<Modulo>Scope` vive
+en `repositories.py` y el service lo importa (§24).
+
+Única excepción: `middlewares/exception_handlers.py` persiste `ErrorLog`
+abriendo su propia sesión (§7), porque el handler global no pasa por ningún
+service.
+
+---
+
+## 5. Imports y archivos `__init__.py`
+
+Bloque de imports completo de un `routes.py`:
 
 ```python
-class User(BaseModel, table=True):
-    __tablename__ = "users"
+from typing import Annotated
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.database import get_db
+from app.domains.auth.dependencies import require_permission
+from app.domains.auth.schemas import CurrentUser
+from app.domains.pedidos.schemas import PedidoResponseDetail
+from app.domains.pedidos.services import PedidoService
+from app.shared.enums import Action, Module
+from app.shared.schemas.errors import error_responses
 ```
 
-### Auditoría
+Por qué cada regla:
 
-Creación:
+- **Importar desde el archivo de origen.** Con una fachada en `__init__.py`,
+  importar un dominio carga todos sus archivos, y es fácil crear un import
+  circular sin verlo.
+- **Imports absolutos.** `from .models import X` y
+  `from app.domains.pedidos.models import X` cargan el mismo módulo de dos
+  formas; con absolutos el origen se lee sin abrir el archivo.
+- **Tres grupos ordenados.** Separa lo propio de lo externo y es el orden que
+  aplican isort y ruff (`ruff check --select I --fix`).
 
-```text
-created_at → automático
-updated_at → automático
-created_by → service
-updated_by → service
-```
+`middlewares/__init__.py` es un ejemplo de excepción válida: define
+`register_all_middlewares`, que no reexporta nada.
 
-Actualización:
+---
 
-```text
-created_at → no cambia
-created_by → no cambia
-updated_at → service
-updated_by → service
-```
+## 6. Config
 
-Eliminación lógica:
+`Settings` agrupa las variables por tema y deriva valores de `ENVIRONMENT`, para
+que no puedan contradecirse (por ejemplo, `ENVIRONMENT=production` con
+`DEBUG=true`):
 
-```text
-is_deleted = True
-deleted_at = now
-deleted_by = current_user_id
-updated_at = now
-updated_by = current_user_id
-```
+| Propiedad derivada | Regla |
+|---|---|
+| `DEBUG` | `True` solo en `development` |
+| `DOCS_ENABLED` | La variable si está definida; si no, igual a `DEBUG` |
+| `CORS_ORIGINS_LIST` | `DEV_ORIGINS` en `development` y `test`; `PROD_ORIGINS` en el resto, obligatoria |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | Una variable por entorno |
+| `REFRESH_TOKEN_EXPIRE_DAYS` | Una variable por entorno |
+| `REFRESH_TOKEN_COOKIE_SECURE` | `True` en `staging` y `production` |
+| `CLOUDINARY_FOLDER_NAME` | Carpeta de producción o de pruebas, obligatoria |
 
-## 4.2 Soft delete
+Validaciones al arrancar:
 
-`delete` realiza eliminación lógica por defecto.
+- `SECRET_KEY` y `CSRF_SECRET_KEY` tienen al menos 32 bytes y son distintas.
+- Una variable vacía (`DOCS_ENABLED=`) equivale a no definirla.
+- `extra="ignore"`: variables desconocidas del entorno no rompen el arranque.
 
-`get` y `list` excluyen `is_deleted=True`.
-
-La consulta de registros eliminados debe ser explícita.
-
-## 4.3 Config
-
-`core/config.py` utiliza `pydantic-settings`.
-
-`Settings` es la única fuente de configuración.
-
-`get_settings()` usa `lru_cache`.
-
-No leer `.env` desde otros módulos.
-
-Entornos:
-
-```text
-development
-staging
-production
-test
-```
-
-`DEBUG` se deriva de `ENVIRONMENT`.
-
-También pueden derivarse:
-
-```text
-CORS_ORIGINS_LIST
-ACCESS_TOKEN_EXPIRE_MINUTES
-REFRESH_TOKEN_EXPIRE_DAYS
-REFRESH_TOKEN_COOKIE_SECURE
-```
-
-Esto evita configuraciones contradictorias como `ENVIRONMENT=production` y `DEBUG=true`.
-
-## 4.4 Database
-
-`core/database.py` administra exclusivamente PostgreSQL.
-
-El proyecto mantiene dos bases de datos:
-
-```text
-ENVIRONMENT=production                    → DATABASE_URL
-ENVIRONMENT=development | test | staging → TEST_DATABASE_URL
-```
-
-`DATABASE_URL` contiene exclusivamente la base productiva. La base indicada por
-`TEST_DATABASE_URL` se comparte entre los tres entornos no productivos. Por
-ello, cualquier prueba destructiva debe estar protegida explícitamente mientras
-se mantenga esta decisión.
-
-La URL se selecciona mediante `ENVIRONMENT`, nunca mediante `DEBUG`. La API y
-Alembic deben implementar la misma selección para impedir que una migración se
-aplique a una base distinta de la utilizada por la aplicación.
-
-Responsabilidades:
-
-```text
-resolver DATABASE_URL
-crear AsyncEngine
-crear async_sessionmaker
-inicializar infraestructura
-comprobar conexión
-proporcionar sesión por request
-cerrar engine
-```
-
-Funciones conceptuales:
-
-```text
-_get_database_url
-create_database_engine
-create_session_factory
-initialize_database
-check_database_connection
-get_db
-close_database
-```
-
-Configuración:
-
-```text
-create_async_engine
-pool_pre_ping=True
-echo=settings.DEBUG
-
-async_sessionmaker
-expire_on_commit=False
-autoflush=False
-```
-
-### App state
-
-Nombres oficiales:
-
-```text
-app.state.db_engine
-app.state.db_session_factory
-```
-
-`system_router.py` consulta `db_engine`.
-
-`get_db()` y el global exception handler pueden consultar `db_session_factory`.
-
-No usar nombres alternativos como:
-
-```text
-app.state.database
-```
-
-### `get_db()`
-
-Está diseñado como dependency de FastAPI:
+En los tests, la configuración se reemplaza sin tocar el `.env`:
 
 ```python
-session: AsyncSession = Depends(get_db)
+app.dependency_overrides[get_settings] = lambda: Settings(ENVIRONMENT="test")
+get_settings.cache_clear()
 ```
 
-Utiliza `yield` y la session factory almacenada en `app.state`.
+Esto solo funciona porque los módulos reciben `settings` por parámetro o por
+`Depends(get_settings)`. Un `settings = get_settings()` a nivel de módulo
+quedaría fijado al importarse.
 
-Código fuera del flujo normal de dependencies puede abrir sesiones directamente desde `db_session_factory`.
+---
 
-## 4.5 Logging
+## 7. Base de datos
 
-`core/logging.py` expone:
+### Selección de la base
 
-```text
-setup_logging
-get_logger
+| `ENVIRONMENT` | Variable | Contenido |
+|---|---|---|
+| `production` | `DATABASE_URL` | Datos reales |
+| `development`, `test`, `staging` | `TEST_DATABASE_URL` | Base no productiva compartida |
+
+La selección vive en `_get_database_url(settings)` y la reutiliza Alembic (§8),
+para que una migration nunca se aplique a una base distinta de la que usa la
+aplicación. Mientras los tres entornos no productivos compartan base, un test
+no vacía tablas sin una protección explícita.
+
+### Engine y sesiones
+
+```python
+create_async_engine(url, echo=settings.DEBUG, pool_pre_ping=True, connect_args=get_connect_args())
+async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False, autoflush=False)
 ```
 
-Configuración estándar:
+| Opción | Por qué |
+|---|---|
+| `pool_pre_ping=True` | Descarta conexiones que el servidor o el pooler cerraron |
+| `get_connect_args()` | Desactiva la caché de prepared statements de asyncpg y les da nombres únicos; necesario detrás de PgBouncer o de un pooler en modo transacción |
+| `expire_on_commit=False` | Tras el commit los atributos siguen cargados; en async, recargarlos de forma implícita fallaría |
+| `autoflush=False` | El service decide cuándo hacer `flush()` (§22) |
+
+### Una sesión por request
+
+```python
+async def get_db(request: Request) -> AsyncGenerator[AsyncSession, None]:
+    session_factory = getattr(request.app.state, "db_session_factory", None)
+    if session_factory is None:
+        raise RuntimeError("La fábrica de sesiones no está inicializada")
+    async with session_factory() as session:
+        yield session
+```
+
+FastAPI ejecuta una dependencia una sola vez por request: la autenticación y
+la route comparten la misma sesión y la misma transacción. Al terminar, la
+sesión se cierra y lo que no se confirmó se descarta.
+
+### Sesiones fuera de `Depends()`
+
+Una background task recibe ids y abre su propia sesión:
+
+```python
+async def enviar_comprobante(session_factory: async_sessionmaker[AsyncSession], pedido_id: UUID) -> None:
+    async with session_factory() as session:
+        pedido = await PedidoRepository.get(session, pedido_id, scope=PedidoScope(all=True))
+        ...
+
+
+background_tasks.add_task(enviar_comprobante, request.app.state.db_session_factory, pedido.id)
+```
+
+El handler global de errores hace lo mismo para guardar `ErrorLog`: si la
+transacción de la request falló, su sesión puede estar inutilizable.
+
+Una `AsyncSession` tampoco se comparte entre tareas concurrentes:
+
+```python
+# No: dos queries a la vez sobre la misma sesión
+await asyncio.gather(ClienteRepository.get(s, a), ProductoRepository.get(s, b))
+```
+
+---
+
+## 8. Alembic
+
+### Configuración inicial
+
+```bash
+alembic init -t async migrations
+```
+
+`migrations/env.py`, modo online:
+
+```python
+import asyncio
+
+from alembic import context
+from sqlalchemy import pool
+from sqlalchemy.ext.asyncio import create_async_engine
+from sqlmodel import SQLModel
+
+import app.domains.auth.models  # noqa: F401
+import app.domains.error_logs.models  # noqa: F401
+import app.domains.pedidos.models  # noqa: F401  (un import por dominio)
+from app.core.config import get_settings
+from app.core.database import _get_database_url, get_connect_args
+
+target_metadata = SQLModel.metadata
+
+
+def do_run_migrations(connection) -> None:
+    context.configure(connection=connection, target_metadata=target_metadata)
+    with context.begin_transaction():
+        context.run_migrations()
+
+
+async def run_async_migrations() -> None:
+    engine = create_async_engine(
+        _get_database_url(get_settings()),
+        poolclass=pool.NullPool,
+        connect_args=get_connect_args(),
+    )
+    async with engine.connect() as connection:
+        await connection.run_sync(do_run_migrations)
+    await engine.dispose()
+
+
+def run_migrations_online() -> None:
+    asyncio.run(run_async_migrations())
+```
+
+Un model que no se importa en `env.py` no está en `SQLModel.metadata`, y
+autogenerate propondría eliminar su tabla.
+
+Convención de nombres, en `core/base_model.py`, antes de declarar cualquier
+model:
+
+```python
+SQLModel.metadata.naming_convention = {
+    "ix": "ix_%(column_0_label)s",
+    "uq": "uq_%(table_name)s_%(column_0_name)s",
+    "ck": "ck_%(table_name)s_%(constraint_name)s",
+    "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
+    "pk": "pk_%(table_name)s",
+}
+```
+
+Sin ella, PostgreSQL inventa los nombres y una migration posterior no puede
+eliminar el constraint sin conocerlo.
+
+La regla `ck` ya agrega el prefijo y la tabla: un `CheckConstraint` recibe solo
+la parte final del nombre.
+
+```python
+CheckConstraint("monto >= 0", name="monto_positivo")  # → ck_pagos_monto_positivo
+```
+
+`migrations/script.py.mako` agrega `import sqlmodel` junto a los imports de
+Alembic, porque autogenerate escribe tipos como `sqlmodel.sql.sqltypes.AutoString`.
+
+### Qué se escribe a mano
+
+**Renombrar una columna** (autogenerate la eliminaría y crearía otra vacía):
+
+```python
+op.alter_column("clientes", "nombre", new_column_name="razon_social")
+```
+
+**Trigger de un Registro** (§19), en la migración inicial:
+
+```python
+def upgrade() -> None:
+    op.execute("""
+        CREATE FUNCTION forbid_update_delete() RETURNS trigger AS $$
+        BEGIN
+            RAISE EXCEPTION 'La tabla % solo admite INSERT', TG_TABLE_NAME;
+        END;
+        $$ LANGUAGE plpgsql;
+    """)
+    op.execute("""
+        CREATE TRIGGER movimientos_insert_only
+        BEFORE UPDATE OR DELETE ON movimientos
+        FOR EACH ROW EXECUTE FUNCTION forbid_update_delete();
+    """)
+
+
+def downgrade() -> None:
+    op.execute("DROP TRIGGER movimientos_insert_only ON movimientos")
+    op.execute("DROP FUNCTION forbid_update_delete()")
+```
+
+La función se crea una vez y la reutiliza el trigger de cada Registro.
+
+**Filas fijas** (§17):
+
+```python
+monedas = sa.table(
+    "monedas",
+    sa.column("id", sa.Uuid),
+    sa.column("codigo", sa.String),
+    sa.column("orden", sa.Integer),
+    sa.column("created_at", sa.DateTime(timezone=True)),
+    sa.column("updated_at", sa.DateTime(timezone=True)),
+    sa.column("is_deleted", sa.Boolean),
+)
+now = datetime.now(timezone.utc)
+op.bulk_insert(monedas, [
+    {"id": UUID("5f0c2c1e-0000-4000-8000-000000000001"), "codigo": "BOB", "orden": 1,
+     "created_at": now, "updated_at": now, "is_deleted": False},
+])
+```
+
+Los defaults de `BaseModel` se aplican en Python, no en la base: un
+`bulk_insert` debe enviar `created_at`, `updated_at` e `is_deleted`.
+
+### Comandos
+
+```bash
+alembic revision --autogenerate -m "agrega pedidos"
+alembic upgrade head
+alembic downgrade -1
+alembic check        # falla si los models tienen cambios sin migration
+```
+
+---
+
+## 9. Logging
 
 ```python
 logging.basicConfig(
@@ -340,742 +502,18 @@ logging.basicConfig(
 )
 ```
 
-Uso:
+Uso esperado:
 
-```python
-from app.core.logging import get_logger
-
-logger = get_logger(__name__)
-```
-
-No configurar logging localmente en otros módulos.
-
-## 4.6 Security
-
-`core/security.py` contiene primitivas reutilizables.
-
-Contraseñas:
-
-```text
-PasswordHash.recommended()
-hash_password
-verify_password
-DUMMY_PASSWORD_HASH
-```
-
-JWT:
-
-```text
-create_access_token
-decode_access_token
-```
-
-Claims mínimos:
-
-```text
-iat
-exp
-jti
-```
-
-Refresh tokens:
-
-```text
-create_refresh_token
-hash_refresh_token
-```
-
-CSRF:
-
-```text
-create_csrf_token
-verify_csrf_token
-```
-
-One-time tokens:
-
-```text
-create_one_time_token
-hash_one_time_token
-```
-
-Claves separadas:
-
-```text
-SECRET_KEY
-CSRF_SECRET_KEY
-```
-
-`security.py` no contiene login, logout, sesiones, permisos, cookies, Depends ni respuestas HTTP.
-
-## 4.7 System router
-
-`core/system_router.py` contiene endpoints técnicos.
-
-### `GET /`
-
-En development puede redirigir a `/docs`.
-
-En otros entornos devuelve estado mínimo de la aplicación.
-
-### `GET /health`
-
-Funciona como readiness probe.
-
-Consulta `app.state.db_engine` y delega la comprobación a:
-
-```text
-check_database_connection()
-```
-
-Respuestas técnicas como `/health` no están obligadas a usar el `ErrorResponse` funcional.
-
-HTTP:
-
-```text
-200 → healthy
-503 → unavailable
-```
-
-Nunca exponer excepciones internas, stack traces, credenciales o connection strings.
+- `logger.info` para hechos operativos (arranque, conexión inicializada).
+- `logger.exception` dentro de un `except`, para que el log incluya el stack.
+- Nunca se registran contraseñas, tokens, secretos ni connection strings.
+- `print` no se usa: no tiene nivel ni origen.
 
 ---
 
-# 5. Alembic y PostgreSQL
+## 10. Middlewares
 
-PostgreSQL utiliza tablas.
-
-SQLModel describe la estructura; Alembic la materializa.
-
-```text
-models.py
-↓
-SQLModel.metadata
-↓
-Alembic
-↓
-PostgreSQL
-```
-
-No crear tablas durante startup.
-
-No crear funciones específicas como:
-
-```text
-create_users_table
-create_auth_session_table
-create_all_tables
-```
-
-No utilizar `SQLModel.metadata.create_all()` como estrategia normal de migración.
-
-Flujo:
-
-```bash
-alembic revision --autogenerate -m "descripcion"
-alembic upgrade head
-```
-
-Alembic debe importar o descubrir los modelos antes de establecer:
-
-```python
-target_metadata = SQLModel.metadata
-```
-
-Las migrations autogeneradas siempre deben revisarse.
-
----
-
-# 6. Domains
-
-Cada funcionalidad importante vive en un dominio propio.
-
-Estructura:
-
-```text
-<domain>/
-├── __init__.py
-├── models.py
-├── schemas.py
-├── repositories.py
-├── services.py
-└── routes.py
-```
-
-No dividir más el dominio salvo necesidad real.
-
----
-
-# 7. Models
-
-Los models utilizan SQLModel y `table=True`.
-
-Representan:
-
-```text
-columnas
-primary keys
-foreign keys
-relationships
-índices
-unique
-nullable
-constraints
-```
-
-No contienen:
-
-```text
-lógica HTTP
-reglas funcionales
-queries de endpoints
-```
-
----
-
-# 8. Schemas
-
-Los schemas utilizan Pydantic puro.
-
-No utilizan SQLModel como clase base.
-
-Schemas estándar:
-
-```text
-Create
-Update
-Response
-ResponseAudit
-```
-
-## Create
-
-Incluye únicamente campos que el cliente puede proporcionar.
-
-No incluye normalmente auditoría ni ID.
-
-## Update
-
-Todos los campos modificables de un schema `Update` son omitibles para `PATCH`
-y se declaran siempre como:
-
-```python
-field: T | None = Field(default=None)
-```
-
-El default permite omitir el campo. El `field_validator` del schema decide de
-forma explícita si un `None` enviado por el cliente se conserva para limpiar
-una columna nullable o se rechaza porque la columna no admite `NULL`. Cuando
-existe un valor concreto, el schema delega en un validador reutilizable
-`object → T` que comprueba internamente el tipo recibido.
-
-Los services utilizan:
-
-```python
-data.model_dump(exclude_unset=True)
-```
-
-`exclude_unset=True` elimina únicamente los campos omitidos y conserva valores
-explícitos como `None`, `0` y `False`. No se utiliza `exclude_none=True` en este
-flujo, ya que impediría limpiar campos nullable.
-
-## Response
-
-Debe poder construirse desde objetos ORM mediante:
-
-```python
-ConfigDict(from_attributes=True)
-```
-
-## ResponseAudit
-
-Hereda de `Response` y añade los campos de auditoría que deban exponerse.
-
-## Schemas especiales
-
-Se permiten cuando representan una operación distinta:
-
-```text
-UserUpdateMe
-ChangePassword
-ResetPassword
-TreeResponse
-ImageResponse
-```
-
----
-
-# 9. Validaciones
-
-Distribución:
-
-```text
-Pydantic Schema
-→ formato, estructura, normalización
-
-Service
-→ reglas de negocio y decisión de qué debe validarse
-
-Repository
-→ queries necesarias para consultar y persistir
-
-SQLModel/PostgreSQL
-→ integridad persistente
-
-Integration
-→ restricciones técnicas del proveedor
-```
-
-Ejemplo de email:
-
-```text
-Schema:
-- EmailStr
-- longitud
-
-Service:
-- solicitar al repository que compruebe que no exista
-
-Repository:
-- ejecutar la consulta de existencia
-
-Model:
-- nullable=False
-- unique=True
-- max_length
-```
-
-Los validadores reutilizables sin base de datos viven en:
-
-```text
-shared/services/validators.py
-```
-
-Todas las funciones reutilizables de validación reciben la entrada como
-`object`, comprueban internamente su tipo en tiempo de ejecución y devuelven un
-valor concreto validado o normalizado:
-
-```text
-object → T
-```
-
-Un tipo incorrecto produce `ValueError`. Las funciones pueden reutilizarse
-tanto en `field_validator(mode="before")` como después del tipado de Pydantic,
-sin asumir que la entrada cruda ya tiene el tipo esperado.
-
-Estas funciones no devuelven `None`. La nulabilidad se resuelve de forma
-explícita en el `field_validator` del schema que conoce el significado de la
-operación. En un `PATCH`, el schema también distingue entre omitir un campo y
-enviarlo expresamente como `null`.
-
----
-
-# 10. Services
-
-Los services contienen la lógica funcional.
-
-CRUD estándar:
-
-```text
-get
-list
-create
-update
-delete
-```
-
-También pueden existir:
-
-```text
-get_tree
-upload_image
-delete_image
-change_password
-activate
-restore
-```
-
-Los services:
-
-- aplican reglas de negocio;
-- coordinan repositories;
-- coordinan transacciones;
-- actualizan auditoría;
-- llaman integrations;
-- lanzan `AppException` cuando corresponde.
-
-No construyen respuestas HTTP ni contienen queries de SQLModel o SQLAlchemy.
-El service conserva el control de `commit()` y `rollback()` para coordinar una
-misma transacción entre varios repositories.
-
-## 10.1 Repositories
-
-Cada dominio persistente encapsula el acceso a datos en `repositories.py`.
-
-Los repositories:
-
-- construyen y ejecutan queries con SQLModel y SQLAlchemy;
-- reciben o utilizan `AsyncSession`;
-- recuperan y persisten models;
-- implementan filtros, orden, paginación y condiciones de soft delete
-  solicitadas por el service;
-- pueden ejecutar `flush()` y `refresh()` cuando sea necesario.
-
-No contienen reglas de negocio, decisiones HTTP, schemas de API ni llamadas a
-integrations. Tampoco ejecutan `commit()` o `rollback()`; esos límites de
-transacción pertenecen al service.
-
-No se crea un repository genérico ni una clase base por defecto. Los
-repositories exponen operaciones concretas requeridas por su dominio.
-
----
-
-# 11. Routes
-
-Las routes gestionan HTTP.
-
-CRUD estándar:
-
-```text
-GET    /
-GET    /{id}
-GET    /{id}/audit
-POST   /
-PATCH  /{id}
-DELETE /{id}
-```
-
-Gestionan:
-
-```text
-Depends
-path parameters
-query parameters
-request schemas
-response schemas
-status codes
-```
-
-No ejecutan queries ni llaman directamente SDKs externos.
-
-`GET /{id}` responde con `Response`. `GET /{id}/audit` responde con
-`ResponseAudit` y expone solo los campos de auditoría autorizados. Si ambos
-endpoints recuperan el mismo registro y aplican las mismas reglas, reutilizan
-el mismo service `get`; cambian el `response_model`, los permisos y los campos
-expuestos.
-
-## `/me`
-
-Si existen:
-
-```text
-GET /me
-PATCH /me
-```
-
-deben reutilizar `get` y `update` cuando la lógica sea equivalente.
-
-La diferencia puede estar únicamente en cómo se obtiene el ID y en el schema permitido.
-
----
-
-# 12. Auth
-
-`domains/auth/` contiene:
-
-```text
-__init__.py
-dependencies.py
-models.py
-schemas.py
-repositories.py
-services.py
-routes.py
-```
-
-`dependencies.py` contiene funciones usadas mediante `Depends()`.
-
-Ejemplos:
-
-```text
-get_current_user
-get_current_user_id
-require_authenticated_user
-require_permission
-```
-
-`core/security.py` proporciona primitivas.
-
-`auth/services.py` implementa el flujo funcional de autenticación.
-Las dependencies de auth no ejecutan queries directamente; delegan la carga y
-validación persistente al service, que utiliza el repository.
-
----
-
-# 13. Error logs
-
-`domains/error_logs/` es obligatorio.
-
-Como mínimo:
-
-```text
-__init__.py
-models.py
-repositories.py
-```
-
-`ErrorLog` persiste errores inesperados capturados por el handler global.
-
-Campos útiles:
-
-```text
-status
-message
-stack
-path
-method
-ip_address
-user_agent
-user_id
-```
-
-`repositories.py` encapsula las queries y la persistencia. Puede añadirse
-`services.py` cuando existan reglas funcionales u orquestación adicional.
-
-No necesita routes o schemas mientras no exista una API para consultar esos registros.
-
----
-
-# 14. Integrations
-
-`integrations/` encapsula proveedores externos.
-
-No debe contener decisiones funcionales del dominio.
-
-Puede configurar SDKs durante startup.
-
-Todas las integrations usan el logger global.
-
-## 14.1 Cloudinary
-
-Responsabilidades:
-
-```text
-configure_cloudinary
-upload_image
-delete_image
-safe_delete_image
-```
-
-Puede validar técnicamente:
-
-```text
-que sea imagen
-bloquear SVG
-máximo 5 MB
-```
-
-Estas reglas protegen el proveedor y pueden permanecer en la integration.
-
-Si el SDK es síncrono dentro de código async, usar:
-
-```python
-await asyncio.to_thread(...)
-```
-
-Guardar la URL segura de la imagen:
-
-```text
-image_url
-```
-
-Para eliminar o administrar un recurso, `CloudinaryService` puede obtener el
-`public_id` desde una URL válida de Cloudinary mediante una función dedicada.
-Esta extracción es una responsabilidad técnica de la integration y no debe
-duplicarse en services o routes.
-
----
-
-# 15. Middlewares
-
-Estructura:
-
-```text
-middlewares/
-├── __init__.py
-├── cors.py
-├── exception_handlers.py
-└── limiter.py
-```
-
-## 15.1 CORS
-
-`cors.py` registra únicamente `CORSMiddleware`.
-
-Usa:
-
-```text
-settings.CORS_ORIGINS_LIST
-allow_credentials=True
-```
-
-Métodos:
-
-```text
-GET
-POST
-PATCH
-DELETE
-```
-
-Headers:
-
-```text
-Authorization
-Content-Type
-Accept
-Origin
-X-Requested-With
-X-CSRF-Token
-```
-
-## 15.2 Limiter
-
-`limiter.py` configura SlowAPI.
-
-Configuración actual:
-
-```text
-default_limits = 300/minute
-storage_uri = memory://
-strategy = fixed-window
-headers_enabled = False
-```
-
-Registra:
-
-```text
-app.state.limiter
-SlowAPIASGIMiddleware
-```
-
-No contiene el handler `429`.
-
-Si existen varios workers o instancias, sustituir `memory://` por storage compartido como Redis.
-
-## 15.3 Exception handlers
-
-`exception_handlers.py` registra:
-
-```text
-AppException
-RequestValidationError
-RateLimitExceeded
-StarletteHTTPException
-Exception
-```
-
-### AppException
-
-Formato:
-
-```json
-{
-  "status": "fail",
-  "code": "...",
-  "message": "...",
-  "details": {}
-}
-```
-
-401 añade:
-
-```text
-WWW-Authenticate: Bearer
-```
-
-### Validation
-
-422:
-
-```json
-{
-  "status": "fail",
-  "code": "VALIDATION_ERROR",
-  "message": "Los datos enviados no son válidos.",
-  "details": {}
-}
-```
-
-### Rate limit
-
-429:
-
-```json
-{
-  "status": "fail",
-  "code": "HTTP_429",
-  "message": "Demasiadas solicitudes. Intenta nuevamente más tarde.",
-  "details": {}
-}
-```
-
-Puede devolver:
-
-```text
-Retry-After
-X-RateLimit-Limit
-X-RateLimit-Remaining
-X-RateLimit-Reset
-```
-
-### HTTP exceptions
-
-Código:
-
-```text
-HTTP_<status>
-```
-
-Conserva `exc.headers`.
-
-### Global Exception
-
-En DEBUG:
-
-```text
-logger
-mensaje real
-stack trace en respuesta
-```
-
-Fuera de DEBUG:
-
-```text
-logger
-persistencia en ErrorLog
-respuesta genérica 500
-```
-
-La persistencia usa:
-
-```text
-request.app.state.db_session_factory
-```
-
-porque el exception handler global no usa el flujo normal de `Depends(get_db)`.
-
-Si guardar el error falla, debe registrarse con `logger.exception()` sin provocar un segundo fallo.
-
-## 15.4 Registro global
-
-`middlewares/__init__.py` expone:
-
-```python
-register_all_middlewares(app, settings)
-```
-
-Orden actual:
+### Orden de registro
 
 ```python
 register_exception_handlers(app, settings)
@@ -1083,423 +521,178 @@ register_rate_limiter(app)
 register_cors(app, settings)
 ```
 
----
+Starlette ejecuta los middlewares en orden inverso al de registro: CORS, el
+último registrado, es el primero en recibir la request. Así hasta un `429` o un
+`500` lleva las cabeceras CORS y el navegador puede leer el error.
 
-# 16. Shared
-
-`shared/` contiene código reutilizable entre dominios.
-
-No es una carpeta para código sin ubicación clara.
-
-## 16.1 Enums
-
-Todos los enums reutilizables están en:
+### CORS
 
 ```text
-shared/enums.py
+allow_origins      → settings.CORS_ORIGINS_LIST
+allow_credentials  → True (la cookie del refresh token)
+allow_methods      → GET, POST, PATCH, DELETE
+allow_headers      → Authorization, Content-Type, Accept, Origin, X-Requested-With, X-CSRF-Token
 ```
 
-Un enum estrictamente local puede declararse donde se usa.
+Con `allow_credentials=True` los orígenes nunca pueden ser `*`.
 
-## 16.2 Permissions
-
-`shared/services/permissions.py` contiene:
+### Limiter
 
 ```text
-roles
-modules
-actions
-estructura de permisos (ROLE_PERMISSIONS)
-jerarquía de roles (ROLE_LEVEL)
+default_limits = 300/minute
+storage_uri    = memory://
+strategy       = fixed-window
+key_func       = IP del cliente
 ```
 
-Expone:
+Un endpoint público que recibe credenciales lleva su propio límite (§24). SlowAPI
+exige el parámetro `request`:
 
 ```python
-has_permission(role, module, action) -> bool
-can_manage_role(actor_role, target_role) -> bool
+@router.post("/login")
+@limiter.limit("5/minute")
+async def login(request: Request, data: UserLogin) -> TokenResponse: ...
 ```
 
-`has_permission` responde qué puede hacer un rol sobre un módulo.
-`can_manage_role` responde si un rol puede gestionar o asignar otro rol: solo
-cuando el rol objetivo es estrictamente inferior. Ejemplo:
+`memory://` cuenta por proceso: con varias réplicas, cada una tiene su propio
+contador. En ese caso se usa un almacenamiento compartido como Redis.
+
+### Formato de errores
+
+Todos los errores siguen `ErrorResponse`:
+
+```json
+{ "status": "fail", "code": "...", "message": "...", "details": {} }
+```
+
+| Origen | `status` | `code` | `details` |
+|---|---|---|---|
+| `AppException` | `fail` | El de la excepción | El de la excepción; un `401` agrega `WWW-Authenticate: Bearer` |
+| `RequestValidationError` | `fail` | `VALIDATION_ERROR` | `{"campo -> subcampo": "mensaje en español"}` |
+| `RateLimitExceeded` | `fail` | `HTTP_429` | Vacío; cabeceras `Retry-After` y `X-RateLimit-*` |
+| `StarletteHTTPException` | `fail` | `HTTP_<código>` | Vacío; conserva `exc.headers` |
+| `Exception` | `error` | `INTERNAL_ERROR` | Con `DEBUG`, el stack; si no, vacío |
+
+`_translate_validation_message` traduce los tipos de error de Pydantic
+(`missing`, `string_too_long`, `extra_forbidden`…) y deja el mensaje de un
+`ValueError` tal como lo escribió el validador (§21).
+
+Fuera de `DEBUG`, el handler global registra el error con el logger, lo
+guarda en `ErrorLog` con una sesión propia y responde un `500` genérico. Si
+guardar falla, solo se registra con `logger.exception`.
+
+---
+
+## 11. Integrations
+
+Cada proveedor tiene un archivo con dos piezas:
 
 ```python
-ROLE_LEVEL: dict[Role, int] = {
-    Role.ADMIN: 1,
-    Role.OWNER: 2,
-    Role.SUPERADMIN: 3,
-}
+def configure_resend(settings: Settings) -> None:
+    """Configura el SDK una vez; se llama desde el lifespan."""
 
 
-def can_manage_role(actor_role: Role, target_role: Role) -> bool:
-    return ROLE_LEVEL[target_role] < ROLE_LEVEL[actor_role]
+class ResendService:
+    """Operaciones del proveedor; las llama un service de dominio."""
 ```
 
-El service de usuarios traduce un resultado negativo en `AppException` con
-`403` y `ErrorCode.PERMISSION_DENIED`, y lo aplica al crear, modificar (rol
-actual y rol resultante), eliminar y restablecer contraseñas. Las reglas
-completas están en `AGENTS.md`, sección «Roles y permisos».
-
-## 16.3 Slug
-
-`shared/services/slug.py` contiene generadores reutilizables.
-
-## 16.4 Validators
-
-`shared/services/validators.py` contiene validadores reutilizables sin acceso a base de datos.
-
-## 16.5 Shared schemas
-
-```text
-shared/schemas/errors.py
-shared/schemas/pagination.py
-shared/schemas/tree.py
-```
-
-## 16.6 Shared errors
-
-```text
-shared/errors/codes.py
-shared/errors/exceptions.py
-```
-
-`codes.py` contiene identificadores estables.
-
-`exceptions.py` contiene `AppException`.
-
-Flujo:
-
-```text
-Service
-↓
-AppException
-↓
-Exception Handler
-↓
-ErrorResponse
-```
-
----
-
-# 17. API Router
-
-`app/api.py` solo agrega routers; no contiene lógica.
-
-```text
-api_router
-├── system_router      → core/system_router.py: / y /health (§4.7)
-└── no_system_router   → prefijo /api/v1
-```
-
-Cada dominio con routes se incluye en `no_system_router`, nunca directamente en
-`api_router`, porque quedaría fuera de `/api/v1`:
+Un SDK síncrono se ejecuta en un hilo para no bloquear el event loop:
 
 ```python
-from app.domains.users.routes import router as users_router
-
-no_system_router.include_router(users_router)
+response = await asyncio.to_thread(
+    cloudinary.uploader.upload,
+    file.file,
+    folder=folder,
+    resource_type="image",
+)
 ```
+
+Ejemplo de detalle que solo conoce la integration: la URL segura que devuelve
+Cloudinary es lo que se guarda en la base (`image_url`). Para eliminar la
+imagen hace falta su `public_id`, que se extrae de la URL con
+`CloudinaryService._extract_public_id`. Ningún service ni route interpreta esa
+URL.
+
+Las restricciones técnicas del proveedor (tipo de imagen, bloqueo de SVG,
+tamaño máximo de 5 MB) viven en la integration. Las reglas del negocio, como
+cuántas imágenes puede tener un producto, viven en el service.
+
+Las integraciones de la plantilla son opcionales:
+
+| Sin sus variables | Comportamiento |
+|---|---|
+| Al arrancar | `configure_<proveedor>` registra un aviso y no falla |
+| Al usarla | La operación lanza `RuntimeError` con las variables que faltan; el handler global responde `500` y lo guarda en `ErrorLog` |
+
+Así un backend que no sube imágenes ni envía correos no necesita credenciales
+falsas para arrancar.
 
 ---
 
-# 18. Main
+## 12. API y main
 
-`app/main.py` es el punto de composición: crea la aplicación y conecta sus
-piezas. No crea tablas ni contiene CRUD ni lógica de negocio.
-
-## Al importarse
-
-```text
-get_settings
-setup_logging
-crear FastAPI con su lifespan
-register_all_middlewares
-include_router(api_router)
-setup_openapi
-```
-
-## Lifespan
-
-```text
-configure integrations
-↓
-initialize_database
-↓
-check_database_connection
-↓
-app.state.db_engine
-app.state.db_session_factory
-↓
-yield
-↓
-close_database
-```
-
-## Uvicorn
-
-La ejecución directa (`if __name__ == "__main__":`) usa `reload=settings.DEBUG`.
-En despliegue la aplicación arranca con el `CMD` de Docker (§25), sin reload.
-
----
-
-# 19. Flujo general
-
-Request normal:
-
-```text
-HTTP
-↓
-Route
-↓
-Dependencies
-↓
-Pydantic Schema
-↓
-Service
-↓
-Repository
-↓
-SQLModel
-↓
-PostgreSQL
-```
-
-Con proveedor:
-
-```text
-Route
-↓
-Service
-↓
-Integration
-↓
-Provider
-```
-
-Error funcional:
-
-```text
-Service
-↓
-AppException
-↓
-Exception Handler
-↓
-ErrorResponse
-```
-
-Error inesperado:
-
-```text
-Exception
-↓
-Global Exception Handler
-├── logger
-├── ErrorLog
-└── 500 seguro
-```
-
----
-
-# 20. Dirección de dependencias
-
-Preferir:
-
-```text
-routes
-↓
-services
-↓
-repositories
-↓
-models
-```
-
-y:
-
-```text
-services
-↓
-integrations
-```
-
-Evitar:
-
-```text
-models → services
-models → routes
-repositories → services
-repositories → routes
-services → routes
-schemas → routes
-integrations → routes
-routes → repositories
-```
-
-La dependencia directa de `middlewares/exception_handlers.py` hacia el
-repository de `ErrorLog` es una excepción limitada al registro global de
-errores.
-
----
-
-## 20.1 Imports y archivos `__init__.py`
-
-Los archivos `__init__.py` no funcionan como fachadas de importación y no
-reexportan símbolos definidos en otros módulos. No deben contener imports de
-reexportación ni declaraciones `__all__`.
-
-Cada dependencia se importa desde el archivo concreto donde está definida:
+`app/api.py`:
 
 ```python
-from app.domains.users.models import User
-from app.domains.users.schemas import UserResponse
+from fastapi import APIRouter
+
+from app.core.system_router import router as system_router
+from app.domains.pedidos.routes import router as pedidos_router
+
+no_system_router = APIRouter(prefix="/api/v1")
+no_system_router.include_router(pedidos_router)
+
+api_router = APIRouter()
+api_router.include_router(system_router)
+api_router.include_router(no_system_router)
 ```
 
-No se permiten imports abreviados desde el paquete:
+`app/main.py`:
 
 ```python
-from app.domains.users import User, UserResponse
+settings = get_settings()
+setup_logging(settings)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    configure_cloudinary(settings)
+    configure_resend(settings)
+    database_engine = None
+    try:
+        database_engine, session_factory = initialize_database(settings)
+        await check_database_connection(database_engine)
+        app.state.db_engine = database_engine
+        app.state.db_session_factory = session_factory
+        yield
+    finally:
+        if database_engine is not None:
+            await close_database(database_engine)
+
+
+app = FastAPI(
+    title=settings.APP_NAME,
+    version=settings.APP_VERSION,
+    description=settings.APP_DESCRIPTION,
+    lifespan=lifespan,
+    docs_url="/docs" if settings.DOCS_ENABLED else None,
+    redoc_url="/redoc" if settings.DOCS_ENABLED else None,
+    openapi_url="/openapi.json" if settings.DOCS_ENABLED else None,
+)
+register_all_middlewares(app, settings)
+app.include_router(api_router)
+setup_openapi(app)
 ```
 
-Como regla general, `__init__.py` permanece vacío. Solo puede contener código
-cuando exista una necesidad técnica explícita distinta de reexportar elementos
-del paquete.
+Si la base no responde al arrancar, `check_database_connection` lanza la
+excepción y la aplicación no arranca: es preferible a aceptar requests que
+fallarán todas.
 
 ---
 
-# 21. Creación de un nuevo dominio
+## 13. Docker y despliegue
 
-Orden recomendado:
-
-```text
-1. models.py
-2. schemas.py
-3. repositories.py
-4. services.py
-5. routes.py
-6. registrar router en api.py
-7. registrar/descubrir modelo para Alembic
-8. generar migration
-9. revisar migration
-10. aplicar migration
-```
-
-Antes de programar identificar:
-
-```text
-campos persistentes
-relaciones
-Create
-Update
-Response
-ResponseAudit
-validaciones
-reglas de negocio
-permisos
-endpoints
-integrations necesarias
-```
-
----
-
-# 22. Prohibiciones principales
-
-No hacer:
-
-```text
-schema heredando de model
-model heredando de schema
-SQLModel usado como schema API
-queries en routes
-queries de SQLModel o SQLAlchemy en services
-lógica de negocio en repositories
-commit o rollback en repositories
-lógica funcional en schemas
-lógica HTTP en models
-SDK externo directamente desde routes
-lecturas dispersas del .env
-logging configurado localmente
-create_all() como sistema de migrations
-creación manual de tablas durante startup
-delete físico por defecto
-get/list mostrando eliminados por defecto
-duplicación de handlers
-shared como carpeta miscelánea
-```
-
----
-
-# 23. Principio de ubicación
-
-```text
-Infraestructura
-→ core
-
-Negocio
-→ domains
-
-Proveedor externo
-→ integrations
-
-HTTP global
-→ middlewares
-
-Código transversal
-→ shared
-```
-
-Dentro de un dominio:
-
-```text
-Definición del modelo persistente
-→ models.py
-
-Acceso y operaciones de persistencia
-→ repositories.py
-
-Entrada/salida
-→ schemas.py
-
-Operaciones y negocio
-→ services.py
-
-HTTP
-→ routes.py
-
-Dependencias de auth
-→ auth/dependencies.py
-```
-
----
-
-# 24. Principio de simplicidad
-
-No introducir automáticamente:
-
-```text
-controllers
-managers
-use_cases
-repositories genéricos
-clases base de repository
-```
-
-No dividir archivos por crecimiento hipotético.
-
-Crear una abstracción únicamente cuando exista una necesidad real.
-
-Preferir siempre código explícito, predecible y consistente.
-
----
-
-# 25. Docker y despliegue
-
-Las reglas viven en `AGENTS.md` §13. Esta sección contiene la referencia.
-
-## 25.1 Dockerfile de referencia
-
-Copiar esta estructura y adaptar solo las carpetas copiadas:
+### Dockerfile de referencia
 
 ```dockerfile
 FROM python:3.14-slim
@@ -1530,104 +723,1025 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
     CMD python -c "import os, urllib.request; urllib.request.urlopen(f'http://127.0.0.1:{os.environ.get(\"PORT\", \"8000\")}/health', timeout=4)"
 
 # Migraciones antes de levantar la API. Requiere una sola réplica.
-# --proxy-headers: IP real del cliente detrás del proxy (Traefik en Dokploy).
-# PORT lo define la plataforma (Railway); si no existe se usa 8000 (Dokploy).
+# exec: uvicorn queda como proceso principal y recibe la señal de apagado.
+# --proxy-headers: IP real del cliente detrás del proxy de la plataforma.
 CMD ["sh", "-c", "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers --forwarded-allow-ips='*'"]
 ```
 
-Si `alembic upgrade head` falla, el contenedor no arranca. Con varias réplicas
-las migraciones se ejecutarían en paralelo; por eso se exige una sola, o mover
-la migración a un paso release/pre-deploy.
+Si `alembic upgrade head` falla, el contenedor no arranca. Con varias réplicas,
+cada una ejecutaría las migraciones a la vez; por eso se exige una sola, o se
+mueve la migración a un paso previo al deploy (en Railway, Pre-deploy command).
 
-## 25.2 `.dockerignore`
+### `.dockerignore`
 
-Debe excluir como mínimo:
+Un patrón por línea, como lo lee Docker:
 
 ```text
 .env
 .env.*
-.venv/ venv/ env/
-.git/ .gitignore .vscode/ .idea/
-**/__pycache__/ **/*.py[cod]
-.pytest_cache/ .mypy_cache/ .ruff_cache/ .coverage htmlcov/
-tests/ docs/ requirements-dev.txt pytest.ini Procfile *.md
-Dockerfile .dockerignore
+.venv/
+venv/
+env/
+.git/
+.gitignore
+.vscode/
+.idea/
+**/__pycache__/
+**/*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+tests/
+docs/
+requirements-dev.txt
+pytest.ini
+Procfile
+*.md
+Dockerfile
+.dockerignore
 ```
 
-## 25.3 Variables de entorno
+### Health check
 
-Formato de `.env.example`, compatible con `--env-file` y Dokploy:
+`GET /health` consulta `app.state.db_engine` con `check_database_connection` y
+responde `200` (`healthy`) o `503` (`error`), sin exponer la excepción. No usa
+`ErrorResponse`: es una respuesta técnica para la plataforma.
+
+| Plataforma | Cómo usa `/health` |
+|---|---|
+| Docker / Dokploy | `HEALTHCHECK` del Dockerfile; en Dokploy también puede configurarse en Swarm Settings |
+| Railway | Healthcheck Path configurado en el servicio; solo lo comprueba durante el deploy |
+
+### Variables de entorno
+
+Formato de `.env.example`, compatible con `--env-file`:
 
 - `NOMBRE=valor`, sin espacios alrededor del `=`.
 - Sin comillas: Docker las incluye como parte del valor.
-- Comentarios solo en líneas propias con `#`, nunca al final de la línea.
-- Las variables vacías (`ENABLE_DOCS=`) se tratan en `Settings` como no
-  definidas.
+- Comentarios solo en líneas propias.
 
 URLs de PostgreSQL:
 
-- Formato: `postgresql+asyncpg://USUARIO:PASSWORD@HOST:PUERTO/BASE`.
-- Codificar caracteres reservados del password (`@`→`%40`, `#`→`%23`,
-  `%`→`%25`…).
-- `?ssl=require`; asyncpg no acepta `?sslmode=require`.
-- Supabase: Session Pooler (5432). El Transaction Pooler (6543) rompe los
-  prepared statements de asyncpg, y la conexión directa requiere IPv6, que
-  Docker no tiene por defecto.
-- API en Docker y PostgreSQL en el host: `host.docker.internal`, no
-  `localhost`.
-- API y PostgreSQL en la misma red Docker/Dokploy: el nombre del servicio como
-  host.
+| Caso | Valor |
+|---|---|
+| Formato | `postgresql+asyncpg://USUARIO:PASSWORD@HOST:PUERTO/BASE` |
+| Password con caracteres reservados | Codificados: `@` → `%40`, `#` → `%23`, `%` → `%25` |
+| SSL | `?ssl=require`; SQLAlchemy pasa los parámetros a `asyncpg.connect()`, que no acepta `sslmode` |
+| Supabase | Session Pooler (5432), recomendado para backends persistentes. La conexión directa requiere IPv6, que Docker no tiene por defecto. El Transaction Pooler (6543) exige desactivar los prepared statements, algo que `get_connect_args()` ya hace |
+| API en Docker y PostgreSQL en el host | `host.docker.internal`, no `localhost` |
+| API y PostgreSQL en la misma red Docker | El nombre del servicio como host |
 
-## 25.4 Uso
+### Uso
 
 ```bash
-# Build
 docker build -t <proyecto>-api .
-
-# Ejecución local
 docker run --rm -p 8000:8000 --env-file .env <proyecto>-api
-
-# Seeds (no se ejecutan automáticamente)
 docker exec -it <contenedor> python -m seeds.<seed>
 ```
 
-## 25.5 Checklist para un proyecto nuevo
+### Checklist de un proyecto nuevo
 
-1. Copiar `Dockerfile` y `.dockerignore` de referencia.
+1. Copiar el `Dockerfile` y el `.dockerignore` de referencia.
 2. Separar `requirements.txt` y `requirements-dev.txt` con versiones fijadas.
-3. Implementar `/health` con comprobación real de PostgreSQL y `503` en fallo.
-4. Aplicar la misma regla de selección de base en la app y en Alembic.
-5. Crear `.env.example` con las reglas de formato de 25.3.
-6. Verificar con `docker build` + `docker run --env-file .env` que
+3. Comprobar que `/health` responde `503` si PostgreSQL no está disponible.
+4. Usar la misma selección de base en la aplicación y en Alembic (§7, §8).
+5. Crear `.env.example` con el formato de esta sección.
+6. Verificar con `docker build` y `docker run --env-file .env` que
    `alembic upgrade head` termina y `/health` responde `200`.
+7. En Railway, configurar `/health` como Healthcheck Path.
 
 ---
 
-# 26. Mantenimiento de la documentación
+## 14. Reglas para cambios
 
-`AGENTS.md` y `ARCHITECTURE.md` son documentos de la plantilla. Definen
-decisiones arquitectónicas transversales, estables y reutilizables; no funcionan
-como inventario de cambios de la aplicación ni como historial de cada dominio.
+Antes de escribir código nuevo se busca lo que ya existe:
 
-El trabajo normal sobre un módulo no modifica estos documentos. Esto incluye:
+| Necesidad | Dónde buscar primero |
+|---|---|
+| Validar un formato | `shared/services/validators.py` |
+| Generar un slug | `shared/services/slug.py` |
+| Responder un error | `AppException` + `ErrorCode` |
+| Paginar | `PaginatedResponse` |
+| Exponer un árbol | `TreeResponse` |
+| Comprobar un permiso | `require_permission` |
+| Sincronizar una lista | `shared/services/sync.py` |
+
+Ejemplo de "la solución más simple": si un endpoint necesita un filtro nuevo, se
+agrega un query parameter y una condición en el repository. No se crea un
+sistema genérico de filtros para un único caso.
+
+---
+
+## 15. Protección de la documentación
+
+Antes de editar `AGENTS.md` o este archivo, se formula la regla que se quiere
+documentar. Si no puede escribirse como una convención reutilizable en otros
+backends, no se documenta aquí.
+
+Ejemplos que **no** modifican la documentación:
 
 ```text
 crear, renombrar o eliminar un dominio
-agregar o cambiar endpoints
-agregar campos, schemas o models
-crear repositories o services propios del dominio
-modificar validaciones o reglas de negocio locales
+agregar o cambiar endpoints, campos, schemas o models
 generar migrations
-corregir bugs o realizar refactors locales
+cambiar una regla de negocio local
+corregir un bug o refactorizar un módulo
 ```
 
-Una implementación solo debe actualizar estos documentos cuando introduce,
-cambia o elimina una convención que deba aplicarse transversalmente a los
-módulos presentes y futuros, y que además sea útil al reutilizar la plantilla
-en otro servicio. También pueden modificarse cuando el usuario solicita de
-forma explícita un cambio de documentación.
+Ejemplos que **sí** la modifican:
 
-Antes de editar cualquier `.md`, debe formularse la decisión general que se
-pretende documentar. Si no puede expresarse como una regla reutilizable de la
-plantilla, el archivo no se modifica. Los detalles locales permanecen en el
-código, tests, migrations o documentación específica del dominio.
+```text
+cambiar cómo se nombran los schemas
+cambiar cómo se valida la entrada en todos los dominios
+agregar una pieza de infraestructura compartida
+```
+
+Al cambiar una regla de `AGENTS.md`, se revisa su sección homónima aquí para que
+sus ejemplos sigan cumpliéndola.
+
+---
+
+## 16. Cómo se usa este documento
+
+| Necesito | Leo |
+|---|---|
+| Entender por qué existe una regla | La sección con el mismo número que en `AGENTS.md` |
+| Un ejemplo completo de un dominio | §18 (models), §20 (schemas), §22 (services), §23 (routes) |
+| Material para copiar | §8 (env.py, migrations), §13 (Dockerfile), §22 (contrato de `sync.py`) |
+| Construir un backend nuevo | §17 y §25 |
+
+---
+
+## 17. Clasificación de models
+
+### De `database.md` a la clasificación
+
+`database.md` contiene el SQL de PostgreSQL. El SQL dice qué se guarda; la
+clasificación decide cómo se expone. El ejemplo de este documento parte de este
+SQL (resumido):
+
+```sql
+CREATE TABLE clientes        (id UUID PRIMARY KEY, nombre TEXT NOT NULL);
+CREATE TABLE datos_fiscales  (id UUID PRIMARY KEY REFERENCES clientes(id), nit TEXT NOT NULL);
+CREATE TABLE productos       (id UUID PRIMARY KEY, nombre TEXT NOT NULL, precio NUMERIC(12,2),
+                              stock INT NOT NULL);
+CREATE TABLE etiquetas       (id UUID PRIMARY KEY, nombre TEXT NOT NULL UNIQUE);
+CREATE TABLE monedas         (id UUID PRIMARY KEY, codigo TEXT NOT NULL, orden INT);
+CREATE TABLE categorias      (id UUID PRIMARY KEY, nombre TEXT, padre_id UUID REFERENCES categorias(id));
+CREATE TABLE pedidos         (id UUID PRIMARY KEY, numero TEXT UNIQUE,
+                              cliente_id UUID REFERENCES clientes(id), estado TEXT);
+CREATE TABLE direcciones     (id UUID PRIMARY KEY REFERENCES pedidos(id), calle TEXT);
+CREATE TABLE lineas_pedido   (id UUID PRIMARY KEY, pedido_id UUID REFERENCES pedidos(id),
+                              producto_id UUID REFERENCES productos(id), cantidad INT);
+CREATE TABLE pagos           (id UUID PRIMARY KEY, pedido_id UUID REFERENCES pedidos(id),
+                              monto NUMERIC(12,2));
+CREATE TABLE producto_etiqueta (producto_id UUID REFERENCES productos(id),
+                                etiqueta_id UUID REFERENCES etiquetas(id));
+CREATE TABLE movimientos     (id UUID PRIMARY KEY, producto_id UUID REFERENCES productos(id),
+                              cantidad INT, costo NUMERIC(12,2), balance_after INT,
+                              reverses_id UUID REFERENCES movimientos(id),
+                              idempotency_key TEXT UNIQUE);
+CREATE TABLE configuracion   (id UUID PRIMARY KEY, nombre_tienda TEXT);
+```
+
+Lo que el SQL no dice y el agente pregunta: si cada foreign key es de dueño o
+de referencia, si cada lista es de pocos o de muchos, y quién edita cada tabla.
+
+### Propuesta que el agente presenta para confirmar
+
+| Tabla | Tipo | Por qué |
+|---|---|---|
+| `clientes` | Raíz | Vida propia, listado y detalle |
+| `datos_fiscales` | Extensión 1:1 | Uno por cliente, pero lo edita contabilidad en otra pantalla |
+| `productos` | Raíz | Vida propia |
+| `etiquetas` | Catálogo | Los productos las eligen; el usuario puede crear nuevas |
+| `monedas` | Filas fijas | Vienen sembradas; el usuario solo cambia el orden |
+| `categorias` | Catálogo con jerarquía autorreferenciada | `padre_id` apunta a la misma tabla |
+| `pedidos` | Raíz | Vida propia |
+| `direcciones` | Extensión 1:1 embebida | Una por pedido, se edita en el mismo formulario |
+| `lineas_pedido` | Hija embebida | Pocas por pedido (máximo 50), se editan con el pedido |
+| `pagos` | Hija paginada | Sin límite razonable por pedido |
+| `producto_etiqueta` | Puente N:M | Solo dos foreign keys de referencia; se escribe desde el producto |
+| `movimientos` | Registro | Kardex: solo se insertan filas |
+| `configuracion` | Singleton | Una sola fila global |
+
+| Relación | Clasificación |
+|---|---|
+| `pedidos.cliente_id` | Apunto a uno |
+| `lineas_pedido.pedido_id` | Contengo pocos |
+| `lineas_pedido.producto_id` | Apunto a uno |
+| `pagos.pedido_id` | Contengo muchos |
+| `direcciones.id` → `pedidos.id` | Contengo uno (embebida) |
+| `datos_fiscales.id` → `clientes.id` | Contengo uno (no embebida) |
+| `producto_etiqueta` | Apunto a varios, desde el producto |
+| `movimientos.reverses_id` | Referencia al asiento anulado |
+
+Los comentarios del SQL adelantan esta propuesta:
+
+```sql
+pedido_id UUID REFERENCES pedidos(id),     -- contengo, pocos (máx. 50)
+producto_id UUID REFERENCES productos(id)  -- apunto
+```
+
+---
+
+## 18. Models
+
+### Raíz con relaciones
+
+```python
+from typing import TYPE_CHECKING
+from uuid import UUID
+
+from sqlalchemy import Index, text
+from sqlmodel import Field, Relationship
+
+from app.core.base_model import BaseModel
+from app.shared.enums import EstadoPedido
+
+if TYPE_CHECKING:
+    from app.domains.lineas_pedido.models import LineaPedido
+
+
+class Pedido(BaseModel, table=True):
+    __tablename__ = "pedidos"
+    __table_args__ = (
+        Index(
+            "uq_pedidos_numero_not_deleted",
+            "numero",
+            unique=True,
+            postgresql_where=text("is_deleted = false"),
+        ),
+    )
+
+    numero: str = Field(max_length=20)
+    cliente_id: UUID = Field(foreign_key="clientes.id")
+    estado: EstadoPedido = Field(default=EstadoPedido.PENDIENTE)
+
+    lineas: list["LineaPedido"] = Relationship(
+        sa_relationship_kwargs={"lazy": "raise"},
+    )
+```
+
+### Hija embebida
+
+```python
+class LineaPedido(BaseModel, table=True):
+    __tablename__ = "lineas_pedido"
+
+    pedido_id: UUID = Field(foreign_key="pedidos.id", index=True)
+    producto_id: UUID = Field(foreign_key="productos.id")
+    cantidad: int
+```
+
+### Extensión 1:1 con id compartido
+
+```python
+class Direccion(BaseModel, table=True):
+    __tablename__ = "direcciones"
+
+    id: UUID = Field(foreign_key="pedidos.id", primary_key=True)
+    calle: str = Field(max_length=200)
+```
+
+El service la crea con `Direccion(id=pedido.id, ...)`. Como `id` es primary
+key, la base impide una segunda dirección para el mismo pedido.
+
+### Jerarquía autorreferenciada
+
+```python
+class Categoria(BaseModel, table=True):
+    __tablename__ = "categorias"
+
+    nombre: str = Field(max_length=80)
+    padre_id: UUID | None = Field(default=None, foreign_key="categorias.id", index=True)
+```
+
+### Puente N:M
+
+```python
+class ProductoEtiqueta(BaseModel, table=True):
+    __tablename__ = "producto_etiqueta"
+
+    producto_id: UUID = Field(foreign_key="productos.id", index=True)
+    etiqueta_id: UUID = Field(foreign_key="etiquetas.id", index=True)
+```
+
+### Registro (kardex)
+
+```python
+from decimal import Decimal
+
+from sqlalchemy import Numeric
+
+
+class Movimiento(BaseModel, table=True):
+    __tablename__ = "movimientos"
+    __table_args__ = (
+        Index("uq_movimientos_reverses_id", "reverses_id", unique=True),
+        Index("uq_movimientos_idempotency_key", "idempotency_key", unique=True),
+    )
+
+    producto_id: UUID = Field(foreign_key="productos.id", index=True)
+    cantidad: int
+    costo: Decimal = Field(sa_type=Numeric(12, 2))
+    balance_after: int
+    reverses_id: UUID | None = Field(default=None, foreign_key="movimientos.id")
+    idempotency_key: str = Field(max_length=64)
+```
+
+Sus índices únicos no son parciales: un Registro nunca tiene filas eliminadas.
+
+---
+
+## 19. Soft delete y auditoría
+
+### Repository: filtro de eliminados y alcance
+
+```python
+@dataclass(frozen=True)
+class PedidoScope:
+    created_by: UUID | None = None
+    all: bool = False
+
+
+class PedidoRepository:
+    @staticmethod
+    async def get(
+        db_session: AsyncSession,
+        pedido_id: UUID,
+        *,
+        scope: PedidoScope,
+        include_deleted: bool = False,
+        detail: bool = False,
+    ) -> Pedido | None:
+        query = select(Pedido).where(Pedido.id == pedido_id)
+        if not include_deleted:
+            query = query.where(Pedido.is_deleted.is_(False))
+        query = _apply_scope(query, scope)
+        if detail:
+            query = query.options(
+                selectinload(Pedido.lineas.and_(LineaPedido.is_deleted.is_(False))),
+            )
+        return (await db_session.execute(query)).scalars().first()
+
+
+def _apply_scope(query, scope: PedidoScope):
+    if scope.all:
+        return query
+    if scope.created_by is not None:
+        return query.where(Pedido.created_by == scope.created_by)
+    return query.where(false())  # alcance vacío
+```
+
+`GET /{id}` llama a `get` con el valor por defecto; `GET /{id}/audit` pasa
+`include_deleted=True`. El alcance se aplica igual en los dos.
+
+### Service: eliminar con dependientes
+
+Eliminar un producto cubre los tres casos de §19:
+
+```python
+@staticmethod
+async def delete(db_session: AsyncSession, producto_id: UUID, actor: CurrentUser) -> None:
+    producto = await ProductoRepository.get(db_session, producto_id, scope=_scope_for(actor))
+    if producto is None:
+        raise AppException("Producto no encontrado.", 404, ErrorCode.RESOURCE_NOT_FOUND)
+
+    # Referencia no eliminada: una línea de pedido lo usa → 409.
+    if await LineaPedidoRepository.exists_for_producto(db_session, producto_id):
+        raise AppException("El producto está en pedidos.", 409, ErrorCode.CONFLICT)
+
+    # Registro: un movimiento del kardex cuenta como referencia → 409.
+    if await MovimientoRepository.exists_for_producto(db_session, producto_id):
+        raise AppException("El producto tiene movimientos.", 409, ErrorCode.CONFLICT)
+
+    # Puente N:M: sus enlaces caen en cascada, con los mismos deleted_at y deleted_by.
+    now = utc_now()
+    await ProductoEtiquetaRepository.mark_deleted_by_producto(db_session, producto_id, now, actor.id)
+    ProductoRepository.mark_deleted(producto, now, actor.id)
+    await db_session.commit()
+```
+
+Para retirar un producto que ya se vendió, sin eliminarlo, se usa un estado
+como `is_visible`.
+
+Una cascada se marca con un `UPDATE` sobre los hijos no eliminados:
+
+```python
+@staticmethod
+async def mark_deleted_by_pedido(db_session, pedido_id, now, actor_id) -> None:
+    await db_session.execute(
+        update(LineaPedido)
+        .where(LineaPedido.pedido_id == pedido_id, LineaPedido.is_deleted.is_(False))
+        .values(is_deleted=True, deleted_at=now, deleted_by=actor_id,
+                updated_at=now, updated_by=actor_id)
+    )
+```
+
+Las comprobaciones de integridad (las referencias que bloquean, los hijos en
+cascada) consultan todas las filas no eliminadas, sin alcance (§24).
+
+### Anular un asiento de un Registro
+
+```python
+@staticmethod
+async def anular(db_session: AsyncSession, movimiento_id: UUID, actor: CurrentUser) -> Movimiento:
+    original = await MovimientoRepository.get(db_session, movimiento_id, scope=_scope_for(actor))
+    if original is None:
+        raise AppException("Movimiento no encontrado.", 404, ErrorCode.RESOURCE_NOT_FOUND)
+
+    # Bloquea la fila cuyo saldo se mueve hasta el commit.
+    producto = await ProductoRepository.get_for_update(db_session, original.producto_id)
+    reverso = Movimiento(
+        producto_id=original.producto_id,
+        cantidad=-original.cantidad,
+        costo=original.costo,
+        balance_after=producto.stock - original.cantidad,
+        reverses_id=original.id,
+        idempotency_key=f"reverso:{original.id}",
+        created_by=actor.id,
+    )
+    producto.stock = reverso.balance_after
+    db_session.add(reverso)
+    await db_session.commit()
+    return reverso
+```
+
+`get_for_update` usa `select(Producto).where(...).with_for_update()`. El índice
+único sobre `reverses_id` rechaza un segundo reverso del mismo asiento aunque
+dos peticiones lleguen a la vez.
+
+---
+
+## 20. Schemas
+
+### Archivo completo de un dominio
+
+```python
+from datetime import datetime
+from uuid import UUID
+
+from pydantic import Field, field_validator
+
+from app.domains.clientes.schemas import ClienteRef, ClienteResponse
+from app.domains.direcciones.schemas import DireccionCreate, DireccionResponse, DireccionUpdate
+from app.domains.lineas_pedido.schemas import LineaCreate, LineaNestedItem, LineaResponseDetail
+from app.shared.enums import EstadoPedido
+from app.shared.schemas.base import AuditMixin, SchemaBase
+from app.shared.services.validators import validator_non_empty_text
+
+
+# Entrada plana
+class PedidoCreate(SchemaBase):
+    numero: str = Field(max_length=20)
+    cliente_id: UUID
+
+    @field_validator("numero", mode="before")
+    @classmethod
+    def validate_numero(cls, value: object) -> str:
+        return validator_non_empty_text(value)
+
+
+# Entrada con relaciones: hereda la plana
+class PedidoCreateNested(PedidoCreate):
+    direccion: DireccionCreate
+    lineas: list[LineaCreate] = Field(min_length=1, max_length=50)
+
+
+class PedidoUpdate(SchemaBase):
+    numero: str = Field(default=None, max_length=20)
+
+    @field_validator("numero", mode="before")
+    @classmethod
+    def validate_numero(cls, value: object) -> str:
+        if value is None:
+            raise ValueError("El número no puede ser null.")
+        return validator_non_empty_text(value)
+
+
+class PedidoUpdateNested(PedidoUpdate):
+    direccion: DireccionUpdate | None = None
+    lineas: list[LineaNestedItem] | None = Field(default=None, max_length=50)
+
+
+# Salida plana
+class PedidoResponse(SchemaBase):
+    id: UUID
+    numero: str
+    cliente_id: UUID
+    estado: EstadoPedido
+    created_at: datetime
+    updated_at: datetime
+
+
+class PedidoResponseAudit(AuditMixin, PedidoResponse):
+    pass
+
+
+class PedidoRef(SchemaBase):
+    id: UUID
+    numero: str
+
+
+# Salidas con relaciones: heredan la plana
+class PedidoResponseItemList(PedidoResponse):
+    cliente: ClienteRef
+    lineas_count: int
+
+
+class PedidoResponseDetail(PedidoResponse):
+    cliente: ClienteResponse
+    direccion: DireccionResponse
+    lineas: list[LineaResponseDetail]
+```
+
+Qué muestra el ejemplo:
+
+- `PedidoCreate` no tiene `id`, `estado` ni auditoría: los asigna el service.
+- `PedidoUpdate` no tiene `cliente_id`: una referencia de dueño no cambia, y
+  `estado` cambia solo con endpoints de acción.
+- `PedidoResponseItemList` lleva un resumen (`lineas_count`), nunca la lista.
+- `LineaResponseDetail` es el `ResponseDetail` de la línea: incluye su
+  `producto: ProductoResponse`, una referencia a un paso, con schema plano.
+- La auditoría queda al final de `PedidoResponseAudit` porque `AuditMixin` va
+  primero en la herencia.
+
+### La hija embebida
+
+```python
+class LineaCreate(SchemaBase):
+    producto_id: UUID
+    cantidad: int = Field(ge=1, le=999)
+
+    @field_validator("cantidad", mode="before")
+    @classmethod
+    def validate_cantidad(cls, value: object) -> int:
+        return validator_integer(value)
+
+
+class LineaNestedItem(LineaCreate):
+    id: UUID | None = None
+```
+
+`LineaCreate` no tiene `pedido_id`: lo asigna el service del pedido.
+
+### Ejemplo de documentación
+
+```python
+model_config = ConfigDict(
+    json_schema_extra={
+        "example": {
+            "numero": "P-000123",
+            "cliente_id": "8f14e45f-ceea-467a-9575-6b3f0c1a2b3c",
+        }
+    }
+)
+```
+
+Pydantic ordena alfabéticamente las claves de un ejemplo y FastAPI quita sus
+`null`. `core/openapi.py` reemplaza cada ejemplo del OpenAPI por el original
+del schema, con su orden; si dos schemas comparten nombre con ejemplos
+distintos, no reemplaza ninguno.
+
+### Jerarquías
+
+`GET /categorias/arbol` devuelve `TreeResponse[CategoriaResponse]`: cada nodo es
+`{"data": {...}, "children": [...]}`. El `ResponseDetail` de una categoría solo
+embebe sus hijos directos.
+
+---
+
+## 21. Validaciones
+
+### Qué valida cada capa, con un email
+
+```text
+Schema      → validator_email: tipo, formato y normalización
+Service     → consulta si existe otro usuario no eliminado con ese email → 409
+Repository  → ejecuta esa consulta, sin alcance
+Model       → índice único parcial sobre email, para condiciones de carrera
+```
+
+### Validadores disponibles
+
+```text
+Texto       validator_text, validator_non_empty_text, validator_name,
+            validator_slug_source, validator_slug
+Contacto    validator_email, validator_phone, validator_http_url
+Seguridad   validator_password
+Números     validator_integer, validator_non_negative_integer, validator_positive_integer,
+            validator_non_negative_money, validator_positive_money, validator_percentage
+Fechas      validator_date, validator_datetime, validator_time
+Ubicación   validator_latitude, validator_longitude
+Otros       validator_boolean, validator_hex_color, validator_json_object
+```
+
+Un validador nuevo entra en la librería solo si sirve a más de un dominio; uno
+propio de un dominio vive en su `schemas.py`.
+
+### Plantilla de un validador nuevo
+
+```python
+def validator_sku(value: object) -> str:
+    """Normaliza un SKU: mayúsculas, sin espacios, 4 a 20 caracteres."""
+    if not isinstance(value, str):
+        raise ValueError("El SKU debe ser texto.")
+    normalized = value.strip().upper()
+    if not re.fullmatch(r"[A-Z0-9-]{4,20}", normalized):
+        raise ValueError("El SKU solo admite letras, números y guiones (4 a 20).")
+    return normalized
+```
+
+- Comprueba el tipo antes de usar métodos de `str`.
+- El mensaje es para el cliente y en español: el handler de §10 lo expone tal
+  cual.
+- Un límite que depende de la columna (`max_length=20`) iría en `Field`; aquí
+  el largo es parte del formato del SKU y vale en cualquier schema.
+
+---
+
+## 22. Services
+
+### Crear con relaciones
+
+```python
+class PedidoService:
+    @staticmethod
+    async def create(
+        db_session: AsyncSession,
+        data: PedidoCreateNested,
+        actor: CurrentUser,
+    ) -> PedidoResponseDetail:
+        # Referencias recibidas: existen, no están eliminadas y están en el alcance.
+        await ClienteService.ensure_reference(db_session, data.cliente_id, actor)
+        await ProductoService.ensure_references(db_session, [l.producto_id for l in data.lineas], actor)
+        await PedidoService._ensure_numero_unique(db_session, data.numero)
+
+        pedido = Pedido(**data.model_dump(include={"numero", "cliente_id"}), created_by=actor.id)
+        db_session.add(pedido)
+        await db_session.flush()  # asigna pedido.id antes de crear los hijos
+
+        db_session.add(Direccion(id=pedido.id, **data.direccion.model_dump(), created_by=actor.id))
+        for linea in data.lineas:
+            db_session.add(LineaPedido(pedido_id=pedido.id, **linea.model_dump(), created_by=actor.id))
+
+        await db_session.commit()
+        return await PedidoService.get(db_session, pedido.id, actor)  # recarga con su árbol
+```
+
+`ensure_reference` responde `422` si el id no existe, está eliminado o está
+fuera del alcance del actor.
+
+### Editar con sincronización
+
+```python
+@staticmethod
+async def update(db_session, pedido_id, data: PedidoUpdateNested, actor) -> PedidoResponseDetail:
+    pedido = await PedidoRepository.get(db_session, pedido_id, scope=_scope_for(actor), detail=True)
+    if pedido is None:
+        raise AppException("Pedido no encontrado.", 404, ErrorCode.RESOURCE_NOT_FOUND)
+
+    changes = data.model_dump(exclude_unset=True, exclude={"direccion", "lineas"})
+    for field, value in changes.items():
+        setattr(pedido, field, value)
+
+    if data.lineas is not None:
+        plan = plan_sync({linea.id for linea in pedido.lineas}, data.lineas)
+        # 1. eliminar y flush, 2. actualizar, 3. crear
+        ...
+        await db_session.flush()
+        ...
+
+    pedido.updated_at = utc_now()
+    pedido.updated_by = actor.id
+    await db_session.commit()
+    return await PedidoService.get(db_session, pedido.id, actor)
+```
+
+### `shared/services/sync.py`
+
+```python
+plan = plan_sync(existing_ids={linea.id for linea in pedido.lineas}, items=data.lineas)
+plan.to_delete   # frozenset[UUID]: existentes que no vinieron en la lista
+plan.to_update   # tuple: elementos con id
+plan.to_create   # tuple: elementos sin id
+
+plan = plan_ids_sync(existing_ids=etiquetas_actuales, received_ids=data.etiqueta_ids)
+plan.to_delete   # enlaces que se eliminan
+plan.to_create   # enlaces nuevos; los que se conservan no aparecen
+```
+
+`plan_sync` lanza `ForeignChildError` (un `ValueError` con sus `ids`) si un
+elemento trae un id que no pertenece al padre o está eliminado; el service la
+convierte en un `422`:
+
+```python
+try:
+    plan = plan_sync(existing_ids, data.lineas)
+except ForeignChildError as error:
+    raise AppException(
+        "Hay líneas que no pertenecen a este pedido.",
+        422,
+        ErrorCode.VALIDATION_ERROR,
+        details={"lineas": sorted(map(str, error.ids))},
+    ) from error
+```
+
+Por qué una función pura:
+
+- se prueba sin base de datos;
+- todos los services sincronizan igual;
+- el service conserva el control de la transacción y del orden de operaciones.
+
+### Por qué `flush()` antes de actualizar y crear
+
+Un índice único parcial solo considera filas no eliminadas. Si el cliente
+elimina la línea con el código `A` y crea otra con el mismo código en la misma
+petición, PostgreSQL debe ver la eliminación antes que la creación. El
+`flush()` la envía dentro de la transacción, sin confirmarla.
+
+---
+
+## 23. Routes
+
+### Archivo completo de un dominio
+
+```python
+router = APIRouter(prefix="/pedidos", tags=["Pedidos"])
+
+
+@router.get(
+    "/",
+    response_model=PaginatedResponse[PedidoResponseItemList],
+    summary="Listar pedidos",
+    responses=error_responses(401, 403, 422, 500),
+)
+async def list_pedidos(
+    current_user: Annotated[CurrentUser, Depends(require_permission(Module.PEDIDO, Action.READ))],
+    db_session: Annotated[AsyncSession, Depends(get_db)],
+    page: Annotated[int, Query(ge=1)] = 1,
+    per_page: Annotated[int, Query(ge=1, le=100)] = 20,
+    cliente_id: Annotated[UUID | None, Query()] = None,
+) -> PaginatedResponse[PedidoResponseItemList]:
+    return await PedidoService.list(
+        db_session, actor=current_user, page=page, per_page=per_page, cliente_id=cliente_id,
+    )
+
+
+@router.get(
+    "/{pedido_id}",
+    response_model=PedidoResponseDetail,
+    summary="Obtener un pedido",
+    responses=error_responses(401, 403, 404, 500),
+)
+async def get_pedido(
+    pedido_id: UUID,
+    current_user: Annotated[CurrentUser, Depends(require_permission(Module.PEDIDO, Action.READ))],
+    db_session: Annotated[AsyncSession, Depends(get_db)],
+) -> PedidoResponseDetail:
+    return await PedidoService.get(db_session, pedido_id, current_user)
+
+
+@router.get(
+    "/{pedido_id}/audit",
+    response_model=PedidoResponseAudit,
+    summary="Auditar un pedido",
+    responses=error_responses(401, 403, 404, 500),
+)
+async def audit_pedido(
+    pedido_id: UUID,
+    current_user: Annotated[CurrentUser, Depends(require_permission(Module.PEDIDO, Action.AUDIT))],
+    db_session: Annotated[AsyncSession, Depends(get_db)],
+) -> PedidoResponseAudit:
+    return await PedidoService.get(db_session, pedido_id, current_user, include_deleted=True)
+
+
+@router.post(
+    "/",
+    response_model=PedidoResponseDetail,
+    status_code=status.HTTP_201_CREATED,
+    summary="Crear un pedido",
+    responses=error_responses(401, 403, 409, 422, 500),
+)
+async def create_pedido(
+    data: PedidoCreateNested,
+    current_user: Annotated[CurrentUser, Depends(require_permission(Module.PEDIDO, Action.CREATE))],
+    db_session: Annotated[AsyncSession, Depends(get_db)],
+) -> PedidoResponseDetail:
+    return await PedidoService.create(db_session, data, current_user)
+
+
+@router.patch(
+    "/{pedido_id}",
+    response_model=PedidoResponseDetail,
+    summary="Editar un pedido",
+    responses=error_responses(401, 403, 404, 409, 422, 500),
+)
+async def update_pedido(
+    pedido_id: UUID,
+    data: PedidoUpdateNested,
+    current_user: Annotated[CurrentUser, Depends(require_permission(Module.PEDIDO, Action.UPDATE))],
+    db_session: Annotated[AsyncSession, Depends(get_db)],
+) -> PedidoResponseDetail:
+    return await PedidoService.update(db_session, pedido_id, data, current_user)
+
+
+@router.delete(
+    "/{pedido_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Eliminar un pedido",
+    responses=error_responses(401, 403, 404, 409, 500),
+)
+async def delete_pedido(
+    pedido_id: UUID,
+    current_user: Annotated[CurrentUser, Depends(require_permission(Module.PEDIDO, Action.DELETE))],
+    db_session: Annotated[AsyncSession, Depends(get_db)],
+) -> None:
+    await PedidoService.delete(db_session, pedido_id, current_user)
+
+
+@router.post(
+    "/{pedido_id}/confirmar",
+    response_model=PedidoResponseDetail,
+    summary="Confirmar un pedido",
+    responses=error_responses(401, 403, 404, 409, 500),
+)
+async def confirmar_pedido(
+    pedido_id: UUID,
+    current_user: Annotated[CurrentUser, Depends(require_permission(Module.PEDIDO, Action.UPDATE))],
+    db_session: Annotated[AsyncSession, Depends(get_db)],
+) -> PedidoResponseDetail:
+    return await PedidoService.confirmar(db_session, pedido_id, current_user)
+```
+
+Cada route solo traduce HTTP: recibe, autoriza con su dependencia y delega.
+
+### La hija embebida solo expone su auditoría
+
+```python
+router = APIRouter(prefix="/lineas-pedido", tags=["Líneas de pedido"])
+
+
+@router.get(
+    "/{linea_id}/audit",
+    response_model=LineaResponseAudit,
+    summary="Auditar una línea de pedido",
+    responses=error_responses(401, 403, 404, 500),
+)
+async def audit_linea(
+    linea_id: UUID,
+    current_user: Annotated[CurrentUser, Depends(require_permission(Module.LINEA_PEDIDO, Action.AUDIT))],
+    db_session: Annotated[AsyncSession, Depends(get_db)],
+) -> LineaResponseAudit:
+    return await LineaPedidoService.audit(db_session, linea_id, current_user)
+```
+
+El service busca la línea con el alcance de su pedido (§24).
+
+---
+
+## 24. Security
+
+### Primitivas de `core/security.py`
+
+| Función | Qué hace |
+|---|---|
+| `hash_password`, `verify_password` | Argon2 con `PasswordHash.recommended()`; un hash desconocido verifica como `False` |
+| `DUMMY_PASSWORD_HASH` | Hash que se verifica cuando el usuario no existe, para que el login tarde lo mismo y no revele qué emails existen |
+| `create_access_token`, `decode_access_token` | JWT HS256 con `iat`, `exp` y `jti`; el token inválido decodifica como `None` |
+| `create_refresh_token`, `hash_refresh_token` | Token aleatorio de 64 bytes; en la base solo se guarda su SHA-256 |
+| `create_csrf_token`, `verify_csrf_token` | HMAC del refresh token con `CSRF_SECRET_KEY`, comparado en tiempo constante |
+| `create_one_time_token`, `hash_one_time_token` | Tokens de un solo uso, como el de recuperación de contraseña |
+
+### Flujo de autenticación
+
+Es el flujo que implementa `auth/` al construirse. Sus models (`AuthSession`,
+`PasswordResetToken`) y las primitivas de `core/security.py` ya lo soportan.
+
+```text
+login     → access token (JWT, corto)  + refresh token (cookie HttpOnly) + CSRF token (body)
+request   → Authorization: Bearer <access token>
+refresh   → cookie + X-CSRF-Token → rota la sesión: la anterior queda revocada con replaced_by
+logout    → revoca la sesión
+reset     → token de un solo uso, guardado como hash, con vencimiento
+```
+
+- **Por qué dos claves.** Con una sola, quien obtuviera `SECRET_KEY` podría
+  fabricar también tokens CSRF.
+- **Por qué rotar.** `AuthSession.family_id` agrupa las sesiones que nacen de
+  un mismo login. Si llega un refresh token ya reemplazado, alguien lo copió, y
+  se puede revocar la familia completa.
+- **Por qué hash.** Si la base se filtra, los refresh tokens y los tokens de
+  recuperación guardados no sirven para iniciar sesión.
+
+### Leer la matriz de permisos
+
+Ejemplo de un proyecto con ventas; la plantilla solo trae `Module.USUARIO`:
+
+```python
+ROLE_PERMISSIONS: dict[Role, dict[Module, frozenset[Action]]] = {
+    Role.ADMIN: {
+        Module.VENTA: frozenset({Action.CREATE, Action.READ, Action.UPDATE}),  # sin DELETE: no anula ventas confirmadas
+        Module.VENTA_PAGO: frozenset({Action.UPDATE}),  # los pagos se registran con su venta; UPDATE solo sube el comprobante
+        Module.FINANZAS: frozenset({Action.READ}),  # reportes de solo lectura
+    },
+}
+```
+
+- La fila de un rol se lee como una tabla: todos los módulos, uno por línea.
+- Un comentario explica cada entrada con menos acciones que el resto.
+- `VENTA_PAGO` muestra la regla de las hijas: su módulo solo lista la acción
+  de su propia ruta; registrarlos lo autoriza el permiso de la venta.
+
+### Alcance completo de un módulo
+
+```python
+# permissions.py
+PEDIDO_GLOBAL_SCOPE_ROLES: frozenset[Role] = frozenset({Role.SUPERADMIN, Role.OWNER, Role.ADMIN})
+PEDIDO_OWN_SCOPE_ROLES: frozenset[Role] = frozenset({Role.CAJERO})
+
+
+# pedidos/services.py
+def _scope_for(actor: CurrentUser) -> PedidoScope:
+    if actor.role in PEDIDO_GLOBAL_SCOPE_ROLES:
+        return PedidoScope(all=True)
+    if actor.role in PEDIDO_OWN_SCOPE_ROLES:
+        return PedidoScope(created_by=actor.id)
+    return PedidoScope()
+```
+
+El mismo `_scope_for` lo usan `get`, `list`, `audit`, `update`, `delete`,
+`confirmar` y el `audit` de las líneas. Con un rol nuevo sin grupo, el alcance
+vacío no devuelve nada hasta que alguien decida su grupo.
+
+### `404` fuera de alcance, `403` sin la acción
+
+```text
+Cajero A pide GET /pedidos/{id} de un pedido del cajero B → 404 (no sabe que existe)
+OWNER pide PATCH /usuarios/{id} de un SUPERADMIN           → 403 (lo ve, no puede modificarlo)
+```
+
+---
+
+## 25. Orden de construcción de un backend nuevo
+
+### Etapa horizontal con el ejemplo
+
+| Paso | Resultado |
+|---|---|
+| 1. Leer `database.md` | El SQL de §17 |
+| 2. Clasificar | Las tablas de §17, confirmadas con el usuario |
+| 3. Permisos | `Module.PEDIDO`, `Module.LINEA_PEDIDO`, …; la matriz; `PEDIDO_*_SCOPE_ROLES` |
+| 4. Models y migración | Los models de §18 con sus `Relationship()`; una migración con el trigger de `movimientos` y las `monedas` |
+| 5. Validadores | Los que falten, como `validator_sku` (§21) |
+| 6. Schemas | Ronda 1: `PedidoCreate`, `PedidoResponse`, … Ronda 2: `PedidoCreateNested`, `PedidoResponseDetail`, … (§20) |
+
+### Etapa vertical con el ejemplo
+
+```text
+1. Sin foreign keys, completos    → monedas, etiquetas, configuracion
+2. Primera vuelta, padres → hijos → clientes, productos, pedidos
+                                    (datos_fiscales, direcciones, lineas_pedido y
+                                    producto_etiqueta: solo repository)
+3. Segunda vuelta, hijos → padres → lineas_pedido, direcciones, datos_fiscales,
+                                    productos, clientes, pedidos
+```
+
+`categorias` (jerarquía), `pagos` y `movimientos` no tienen hijos en otros
+dominios: completan las dos vueltas a la vez en cuanto existen los dominios a
+los que apuntan.
+
+En la primera vuelta, `POST /pedidos` recibe `PedidoCreate` y responde
+`PedidoResponse`. En la segunda pasa a `PedidoCreateNested` →
+`PedidoResponseDetail`. El frontend que ya usaba la primera versión sigue
+funcionando: las versiones con relaciones heredan de las planas y solo agregan
+campos.
+
+### Checklist de un dominio
+
+```text
+[ ] Tipo y relaciones confirmados (§17)
+[ ] Module y entradas en la matriz; grupo de alcance si lo necesita (§24)
+[ ] Model con índices parciales y Relationship() (§18)
+[ ] Migration revisada a mano (§8)
+[ ] Schemas de su fila en la tabla de tipos, con ejemplos (§20)
+[ ] Repository con soft delete, alcance y carga de relaciones (§22)
+[ ] Service con referencias validadas, auditoría y transacción (§22)
+[ ] Routes de sus celdas "ruta" y su /audit, con error_responses (§23)
+[ ] Router registrado en no_system_router (§12)
+[ ] Tests: permisos (403), alcance por rol (404), validación (422), conflicto (409)
+```
+
+### Cambios después de la construcción inicial
+
+Agregar un campo a `pedidos`:
+
+```text
+model → migration (revisada) → schemas que lo exponen o lo reciben
+      → validador si es de entrada → repository si se filtra por él → tests
+```
+
+No se repite el orden completo: solo se tocan las capas afectadas.
