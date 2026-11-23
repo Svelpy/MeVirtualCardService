@@ -280,25 +280,27 @@ async def test_la_lectura_publica_exige_dueno_activo_y_plan_vigente(client, db_s
 
 async def test_los_items_publicos_de_la_vitrina(client, user):
     tarjeta = await _crear(client, user)
-    vitrina = (await client.get(f"/api/v1/vitrinas/{tarjeta['id']}", headers=auth_header(user))).json()
-    talleres, consultas = vitrina["categorias"]
-    for body in (
-        {"titulo": "Consulta", "categoria_id": consultas["id"], "orden": 1},
+    url = f"/api/v1/vitrinas/{tarjeta['id']}"
+    talleres, consultas = (await client.get(url, headers=auth_header(user))).json()["categorias"]
+    items = [
+        {"titulo": "Consulta", "categoria_id": consultas["id"], "orden": 1, "precio": "250"},
         {"titulo": "Sin categoría", "orden": 0},
         {"titulo": "Oculto", "is_visible": False},
         {"titulo": "Taller", "categoria_id": talleres["id"]},  # categoría oculta
-    ):
-        response = await client.post(
-            "/api/v1/vitrina-items/", json={"vitrina_id": tarjeta["id"], **body}, headers=auth_header(user)
-        )
-        assert response.status_code == 201, response.text
+    ]
+    response = await client.patch(url, json={"items": items}, headers=auth_header(user))
+    assert response.status_code == 200, response.text
 
-    url = f"/api/v1/vitrina-items/public?vitrina_id={tarjeta['id']}"
-    assert (await client.get(url)).status_code == 404  # tarjeta sin publicar
     await client.post(f"{TARJETAS}/{tarjeta['id']}/publicar", headers=auth_header(user))
-    body = (await client.get(url)).json()
-    assert [item["titulo"] for item in body["data"]] == ["Sin categoría", "Consulta"]
-    assert "is_visible" not in body["data"][0]
+    vitrina = (await client.get(f"{TARJETAS}/public/{tarjeta['slug']}")).json()["vitrina"]
+    assert [item["titulo"] for item in vitrina["items"]] == ["Sin categoría", "Consulta"]
+    assert "is_visible" not in vitrina["items"][0]
+    assert vitrina["items"][1]["precio"] == "250.00"
+
+    # Si la vitrina oculta precios, los items salen sin ellos.
+    await client.patch(url, json={"mostrar_precios": False}, headers=auth_header(user))
+    vitrina = (await client.get(f"{TARJETAS}/public/{tarjeta['slug']}")).json()["vitrina"]
+    assert vitrina["items"][1]["precio"] is None
 
 
 # ---------- Extensiones 1:1 ----------
@@ -334,11 +336,10 @@ async def test_vitrina_una_categoria_con_items_no_se_elimina(client, user):
     tarjeta = await _crear(client, user)
     url = f"/api/v1/vitrinas/{tarjeta['id']}"
     talleres, consultas = (await client.get(url, headers=auth_header(user))).json()["categorias"]
-    await client.post(
-        "/api/v1/vitrina-items/",
-        json={"vitrina_id": tarjeta["id"], "titulo": "Consulta", "categoria_id": consultas["id"]},
-        headers=auth_header(user),
+    response = await client.patch(
+        url, json={"items": [{"titulo": "Consulta", "categoria_id": consultas["id"]}]}, headers=auth_header(user)
     )
+    assert response.status_code == 200, response.text
     response = await client.patch(url, json={"categorias": [{"id": talleres["id"], "nombre": "Talleres"}]}, headers=auth_header(user))
     assert response.status_code == 409
     assert response.json()["details"] == {"categorias": [consultas["id"]]}
@@ -383,20 +384,17 @@ async def test_las_extensiones_aplican_el_alcance_de_su_tarjeta(client, db_sessi
 
 async def test_item_con_imagenes_detalle_e_intercambio_de_la_principal(client, user, cloudinary):
     tarjeta = await _crear(client, user)
-    categoria = (await client.get(f"/api/v1/vitrinas/{tarjeta['id']}", headers=auth_header(user))).json()["categorias"][1]
+    url = f"/api/v1/vitrinas/{tarjeta['id']}"
+    categoria = (await client.get(url, headers=auth_header(user))).json()["categorias"][1]
     a, b = uploaded_image_url(), uploaded_image_url()
-    response = await client.post(
-        "/api/v1/vitrina-items/",
-        json={
-            "vitrina_id": tarjeta["id"],
-            "titulo": "Consulta",
-            "categoria_id": categoria["id"],
-            "imagenes": [{"url": b, "orden": 1}, {"url": a, "orden": 0, "alt": "Consultorio"}],
-        },
-        headers=auth_header(user),
-    )
-    assert response.status_code == 201, response.text
-    item = response.json()
+    item = {
+        "titulo": "Consulta",
+        "categoria_id": categoria["id"],
+        "imagenes": [{"url": b, "orden": 1}, {"url": a, "orden": 0, "alt": "Consultorio"}],
+    }
+    response = await client.patch(url, json={"items": [item]}, headers=auth_header(user))
+    assert response.status_code == 200, response.text
+    item = response.json()["items"][0]
     assert item["categoria"]["nombre"] == "Consultas"
     assert [i["url"] for i in item["imagenes"]] == [a, b]
     assert cloudinary.confirmed[a] == f"tarjetas/{tarjeta['id']}/vitrina"
@@ -404,33 +402,38 @@ async def test_item_con_imagenes_detalle_e_intercambio_de_la_principal(client, u
     imagen_a, imagen_b = item["imagenes"]
     c = uploaded_image_url()
     response = await client.patch(
-        f"/api/v1/vitrina-items/{item['id']}",
+        url,
         json={
-            "imagenes": [
-                {"id": imagen_b["id"], "url": b, "orden": 0},  # pasa a ser la principal
-                {"id": imagen_a["id"], "url": c, "orden": 1},  # cambia su imagen
+            "items": [
+                {
+                    "id": item["id"],
+                    "titulo": "Consulta",
+                    "categoria_id": categoria["id"],
+                    "imagenes": [
+                        {"id": imagen_b["id"], "url": b, "orden": 0},  # pasa a ser la principal
+                        {"id": imagen_a["id"], "url": c, "orden": 1},  # cambia su imagen
+                    ],
+                }
             ]
         },
         headers=auth_header(user),
     )
     assert response.status_code == 200, response.text
-    assert [(i["id"], i["url"]) for i in response.json()["imagenes"]] == [(imagen_b["id"], b), (imagen_a["id"], c)]
+    imagenes = response.json()["items"][0]["imagenes"]
+    assert [(i["id"], i["url"]) for i in imagenes] == [(imagen_b["id"], b), (imagen_a["id"], c)]
     assert cloudinary.deleted == [a]
 
-    listado = (await client.get(f"/api/v1/vitrina-items/?vitrina_id={tarjeta['id']}", headers=auth_header(user))).json()
-    assert listado["data"][0]["categoria"] == {"id": categoria["id"], "nombre": "Consultas"}
-    assert "imagenes" not in listado["data"][0]
+    # imagenes ausente no las toca.
+    response = await client.patch(url, json={"items": [{"id": item["id"], "titulo": "Otra"}]}, headers=auth_header(user))
+    assert len(response.json()["items"][0]["imagenes"]) == 2
 
 
 async def test_item_dos_imagenes_principales_responden_422(client, user):
     tarjeta = await _crear(client, user)
-    response = await client.post(
-        "/api/v1/vitrina-items/",
-        json={
-            "vitrina_id": tarjeta["id"],
-            "titulo": "Consulta",
-            "imagenes": [{"url": uploaded_image_url(), "orden": 0}, {"url": uploaded_image_url(), "orden": 0}],
-        },
+    imagenes = [{"url": uploaded_image_url(), "orden": 0}, {"url": uploaded_image_url(), "orden": 0}]
+    response = await client.patch(
+        f"/api/v1/vitrinas/{tarjeta['id']}",
+        json={"items": [{"titulo": "Consulta", "imagenes": imagenes}]},
         headers=auth_header(user),
     )
     assert response.status_code == 422

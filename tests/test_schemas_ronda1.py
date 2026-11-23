@@ -18,7 +18,8 @@ from app.domains.tarjeta_ubicacion.schemas import TarjetaUbicacionCreate
 from app.domains.ubicacion_horario.schemas import UbicacionHorarioCreate, UbicacionHorarioResponse
 from app.domains.usuario.schemas import UsuarioCreate, UsuarioResponse, UsuarioUpdateMe
 from app.domains.vitrina.schemas import VitrinaCreate
-from app.domains.vitrina_item.schemas import VitrinaItemCreate, VitrinaItemUpdate
+from app.domains.vitrina.schemas import VitrinaUpdate
+from app.domains.vitrina_item.schemas import VitrinaItemCreate
 from app.shared.enums import Role
 
 
@@ -44,9 +45,9 @@ def test_update_acepta_null_en_columna_nullable_para_borrarla():
     assert data.model_dump(exclude_unset=True) == {"prefijo": None, "cover_url": None}
 
 
-def test_update_conserva_false_y_cero():
-    data = VitrinaItemUpdate(destacado=False, orden=0)
-    assert data.model_dump(exclude_unset=True) == {"destacado": False, "orden": 0}
+def test_update_conserva_false():
+    data = VitrinaUpdate(mostrar_precios=False)
+    assert data.model_dump(exclude_unset=True) == {"mostrar_precios": False}
 
 
 def test_los_schemas_rechazan_campos_desconocidos():
@@ -160,11 +161,11 @@ def test_horario_sin_cruzar_la_medianoche_y_en_formato_hh_mm():
 
 def test_precio_anterior_requiere_precio_y_ser_mayor():
     with pytest.raises(ValidationError, match="precio anterior"):
-        VitrinaItemCreate(vitrina_id=VITRINA_ID, titulo="Consulta", precio_anterior="10.00")
+        VitrinaItemCreate(titulo="Consulta", precio_anterior="10.00")
     with pytest.raises(ValidationError, match="precio anterior"):
-        VitrinaItemCreate(vitrina_id=VITRINA_ID, titulo="Consulta", precio="10.00", precio_anterior="5.00")
-    # En un Update, si llega solo uno de los dos, lo compara el service con el valor guardado.
-    assert VitrinaItemUpdate(precio_anterior="5.00").precio_anterior == Decimal("5.00")
+        VitrinaItemCreate(titulo="Consulta", precio="10.00", precio_anterior="5.00")
+    item = VitrinaItemCreate(titulo="Consulta", precio="5.00", precio_anterior="10.00")
+    assert item.precio_anterior == Decimal("10.00")
 
 
 def test_pago_acepta_un_monto_opcional_pero_no_la_moneda_ni_el_periodo():

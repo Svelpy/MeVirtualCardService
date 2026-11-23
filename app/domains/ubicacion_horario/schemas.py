@@ -21,8 +21,8 @@ UBICACION_HORARIO_RESPONSE_EXAMPLE = {
 }
 UBICACION_HORARIO_PUBLIC_EXAMPLE = UBICACION_HORARIO_CREATE_EXAMPLE
 
-# Dos tramos por día durante la semana.
-UBICACION_HORARIO_MAX = 14
+# Tres tramos por día durante la semana.
+UBICACION_HORARIO_MAX = 21
 
 
 def ensure_no_overlap[T](items: Sequence[T]) -> None:

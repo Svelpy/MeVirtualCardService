@@ -23,10 +23,9 @@ from app.domains.usuario.schemas import UsuarioResponse, UsuarioResponseDetail, 
 from app.domains.vitrina.schemas import VitrinaCreateNested, VitrinaResponseDetail, VitrinaUpdateNested
 from app.domains.vitrina_item.schemas import (
     VitrinaItemCreateNested,
+    VitrinaItemNestedItem,
     VitrinaItemResponse,
     VitrinaItemResponseDetail,
-    VitrinaItemResponseItemList,
-    VitrinaItemUpdateNested,
 )
 
 
@@ -58,7 +57,6 @@ def _list_fields(schema: type[BaseModel]) -> set[str]:
         (PagoResponse, PagoResponseDetail),
         (TarjetaResponse, TarjetaResponseItemList),
         (TarjetaResponse, TarjetaResponseDetail),
-        (VitrinaItemResponse, VitrinaItemResponseItemList),
         (VitrinaItemResponse, VitrinaItemResponseDetail),
     ],
 )
@@ -68,7 +66,7 @@ def test_las_salidas_con_relaciones_heredan_la_plana(response, derived):
 
 
 @pytest.mark.parametrize(
-    "item_list", [UsuarioResponseItemList, PagoResponseItemList, TarjetaResponseItemList, VitrinaItemResponseItemList]
+    "item_list", [UsuarioResponseItemList, PagoResponseItemList, TarjetaResponseItemList]
 )
 def test_un_listado_nunca_contiene_colecciones(item_list):
     assert _list_fields(item_list) == set()
@@ -79,7 +77,7 @@ def test_un_listado_nunca_contiene_colecciones(item_list):
     [
         (TarjetaUpdateNested, TarjetaResponseDetail),
         (VitrinaUpdateNested, VitrinaResponseDetail),
-        (VitrinaItemUpdateNested, VitrinaItemResponseDetail),
+        (VitrinaItemNestedItem, VitrinaItemResponseDetail),
         (TarjetaUbicacionNestedItem, TarjetaUbicacionResponseDetail),
     ],
 )
@@ -131,7 +129,9 @@ def test_categorias_con_nombre_unico_e_imagen_principal_unica():
         VitrinaCreateNested(categorias=[{"nombre": "Consultas"}, {"nombre": "Consultas"}])
     imagen = {"url": "https://res.cloudinary.com/demo/image/upload/v1/a.jpg", "orden": 0}
     with pytest.raises(ValidationError, match="principal"):
-        VitrinaItemCreateNested(vitrina_id=VITRINA_ID, titulo="Consulta", imagenes=[imagen, imagen])
+        VitrinaItemCreateNested(titulo="Consulta", imagenes=[imagen, imagen])
+    with pytest.raises(ValidationError, match="sin categoría"):
+        VitrinaCreateNested(items=[{"titulo": "Consulta", "categoria_id": VITRINA_ID}])
 
 
 # ---------- UpdateNested ----------

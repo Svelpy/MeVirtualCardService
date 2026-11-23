@@ -29,12 +29,3 @@ class VitrinaItemImagenRepository:
             .where(VitrinaItemImagen.item_id.in_(item_ids), VitrinaItemImagen.is_deleted.is_(False))
             .values(is_deleted=True, deleted_at=now, deleted_by=actor_id, updated_at=now, updated_by=actor_id)
         )
-
-    @staticmethod
-    async def mark_deleted_by_item(db_session: AsyncSession, item_id: UUID, now: datetime, actor_id: UUID) -> None:
-        """Cascada (§19): las imágenes de un item."""
-        await db_session.execute(
-            update(VitrinaItemImagen)
-            .where(VitrinaItemImagen.item_id == item_id, VitrinaItemImagen.is_deleted.is_(False))
-            .values(is_deleted=True, deleted_at=now, deleted_by=actor_id, updated_at=now, updated_by=actor_id)
-        )

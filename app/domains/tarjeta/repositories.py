@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import ColumnElement, Select, exists, false, func, select, update
+from sqlalchemy import ColumnElement, Select, exists, false, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.interfaces import LoaderOption
@@ -25,6 +25,8 @@ from app.domains.ubicacion_horario.models import UbicacionHorario
 from app.domains.usuario.models import Usuario
 from app.domains.vitrina.models import Vitrina
 from app.domains.vitrina_categoria.models import VitrinaCategoria
+from app.domains.vitrina_item.models import VitrinaItem
+from app.domains.vitrina_item_imagen.models import VitrinaItemImagen
 
 
 @dataclass(frozen=True)
@@ -65,6 +67,10 @@ def _public_condition(now: datetime) -> list[ColumnElement[bool]]:
         Usuario.is_active.is_(True),
         Usuario.plan_vence_at > now,
     ]
+
+
+def _categoria_visible() -> ColumnElement[bool]:
+    return VitrinaCategoria.is_deleted.is_(False) & VitrinaCategoria.is_visible.is_(True)
 
 
 def _children(*, visible_only: bool) -> list[LoaderOption]:
@@ -123,10 +129,20 @@ class TarjetaRepository:
             .options(
                 selectinload(Tarjeta.theme),
                 selectinload(Tarjeta.seo),
-                selectinload(Tarjeta.vitrina).selectinload(
-                    Vitrina.categorias.and_(
-                        VitrinaCategoria.is_deleted.is_(False) & VitrinaCategoria.is_visible.is_(True)
-                    )
+                selectinload(Tarjeta.vitrina).options(
+                    selectinload(Vitrina.categorias.and_(_categoria_visible())),
+                    selectinload(
+                        Vitrina.items.and_(
+                            VitrinaItem.is_deleted.is_(False),
+                            VitrinaItem.is_visible.is_(True),
+                            # Sin los items de una categoría oculta. La foreign key compuesta
+                            # garantiza que la categoría es de la misma vitrina.
+                            or_(
+                                VitrinaItem.categoria_id.is_(None),
+                                VitrinaItem.categoria_id.in_(select(VitrinaCategoria.id).where(_categoria_visible())),
+                            ),
+                        )
+                    ).selectinload(VitrinaItem.imagenes.and_(VitrinaItemImagen.is_deleted.is_(False))),
                 ),
                 *_children(visible_only=True),
             )
@@ -136,12 +152,6 @@ class TarjetaRepository:
         if slug is not None:
             query = query.where(Tarjeta.slug == slug)
         return (await db_session.execute(query)).scalars().first()
-
-    @staticmethod
-    async def is_public(db_session: AsyncSession, tarjeta_id: UUID, now: datetime) -> bool:
-        """Las mismas condiciones que get_public, sin cargar el árbol (items públicos de la vitrina)."""
-        query = select(exists().where(Tarjeta.id == tarjeta_id, *_public_condition(now)))
-        return bool((await db_session.execute(query)).scalar())
 
     @staticmethod
     async def get_by_slug(db_session: AsyncSession, slug: str) -> Tarjeta | None:

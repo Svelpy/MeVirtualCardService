@@ -281,7 +281,7 @@ class TarjetaResponseAudit(AuditMixin, TarjetaResponse):
 class TarjetaPublic(SchemaBase):
     """
     Tarjeta publicada para un visitante anónimo: todo su árbol, sin auditoría y
-    solo con las filas visibles. Los items de la vitrina se listan aparte, paginados.
+    solo con las filas visibles.
     """
 
     id: UUID

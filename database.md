@@ -211,7 +211,7 @@ CREATE TABLE tarjeta_ubicacion (
 -- se solapan en un mismo día.
 CREATE TABLE ubicacion_horario (
     id           uuid PRIMARY KEY,
-    ubicacion_id uuid     NOT NULL REFERENCES tarjeta_ubicacion(id),  -- contengo
+    ubicacion_id uuid     NOT NULL REFERENCES tarjeta_ubicacion(id),  -- contengo, pocos (máx. 21)
     dia_semana   smallint NOT NULL CHECK (dia_semana BETWEEN 1 AND 7),  -- 1 lunes a 7 domingo
     hora_inicio  time     NOT NULL,
     hora_fin     time     NOT NULL,
@@ -301,7 +301,7 @@ CREATE TABLE vitrina_categoria (
 
 CREATE TABLE vitrina_item (
     id              uuid PRIMARY KEY,
-    vitrina_id      uuid          NOT NULL REFERENCES vitrina(id),  -- contengo
+    vitrina_id      uuid          NOT NULL REFERENCES vitrina(id),  -- contengo, pocos (máx. 25)
     categoria_id    uuid,                                           -- apunto; un item en una sola categoría o en ninguna
     titulo          varchar(150)  NOT NULL,
     descripcion     text,
@@ -322,7 +322,7 @@ CREATE TABLE vitrina_item (
 
 CREATE TABLE vitrina_item_imagen (
     id      uuid PRIMARY KEY,
-    item_id uuid         NOT NULL REFERENCES vitrina_item(id),  -- contengo
+    item_id uuid         NOT NULL REFERENCES vitrina_item(id),  -- contengo, pocos (máx. 3)
     url     text         NOT NULL,  -- https
     alt     varchar(150),
     orden   smallint     NOT NULL DEFAULT 0  -- 0 = principal

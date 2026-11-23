@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
 
 class VitrinaItem(BaseModel, table=True):
-    """Hija paginada de la vitrina: rutas propias, vitrina_id obligatorio al crear."""
+    """Hija embebida de la vitrina (máximo VITRINA_ITEM_MAX): se escribe desde PATCH /vitrinas/{id}."""
 
     __tablename__ = "vitrina_item"
     __table_args__ = (

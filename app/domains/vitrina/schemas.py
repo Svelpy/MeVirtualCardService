@@ -1,7 +1,9 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import ConfigDict, Field, field_validator
+from typing import Self
+
+from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from app.domains.vitrina_categoria.schemas import (
     VITRINA_CATEGORIA_CREATE_EXAMPLE,
@@ -14,6 +16,16 @@ from app.domains.vitrina_categoria.schemas import (
     VitrinaCategoriaPublic,
     VitrinaCategoriaResponse,
     ensure_unique_nombre,
+)
+from app.domains.vitrina_item.schemas import (
+    VITRINA_ITEM_CREATE_NESTED_EXAMPLE,
+    VITRINA_ITEM_MAX,
+    VITRINA_ITEM_PUBLIC_EXAMPLE,
+    VITRINA_ITEM_RESPONSE_DETAIL_EXAMPLE,
+    VitrinaItemCreateNested,
+    VitrinaItemNestedItem,
+    VitrinaItemPublic,
+    VitrinaItemResponseDetail,
 )
 from app.shared.schemas.base import AUDIT_EXAMPLE, AuditMixin, SchemaBase, reject_null
 from app.shared.services.validators import (
@@ -39,7 +51,11 @@ VITRINA_RESPONSE_EXAMPLE = {
     "created_at": "2026-01-15T14:30:00Z",
     "updated_at": "2026-02-01T09:00:00Z",
 }
-VITRINA_PUBLIC_EXAMPLE = {**_CAMPOS_EXAMPLE, "categorias": [VITRINA_CATEGORIA_PUBLIC_EXAMPLE]}
+VITRINA_PUBLIC_EXAMPLE = {
+    **_CAMPOS_EXAMPLE,
+    "categorias": [VITRINA_CATEGORIA_PUBLIC_EXAMPLE],
+    "items": [VITRINA_ITEM_PUBLIC_EXAMPLE],
+}
 
 _CAMPO_NOMBRE_FIELDS = ("campo1_nombre", "campo2_nombre", "campo3_nombre", "campo4_nombre")
 
@@ -122,7 +138,10 @@ class VitrinaResponseAudit(AuditMixin, VitrinaResponse):
 
 
 class VitrinaPublic(SchemaBase):
-    """Configuración de la vitrina y sus categorías visibles. Los items se listan aparte."""
+    """
+    La vitrina con sus categorías visibles y sus items visibles (sin los de una
+    categoría oculta). Si mostrar_precios es false, los items salen sin precios.
+    """
 
     mostrar_precios: bool
     moneda: str
@@ -131,6 +150,14 @@ class VitrinaPublic(SchemaBase):
     campo3_nombre: str | None
     campo4_nombre: str | None
     categorias: list[VitrinaCategoriaPublic]
+    items: list[VitrinaItemPublic]
+
+    @model_validator(mode="after")
+    def hide_precios(self) -> Self:
+        if not self.mostrar_precios:
+            for item in self.items:
+                item.precio = item.precio_anterior = item.precio_etiqueta = None
+        return self
 
     model_config = ConfigDict(json_schema_extra={"example": VITRINA_PUBLIC_EXAMPLE})
 
@@ -139,13 +166,21 @@ class VitrinaPublic(SchemaBase):
 # Ronda 2: schemas con relaciones
 # =================================
 
-VITRINA_CREATE_NESTED_EXAMPLE = {**VITRINA_CREATE_EXAMPLE, "categorias": [VITRINA_CATEGORIA_CREATE_EXAMPLE]}
+VITRINA_CREATE_NESTED_EXAMPLE = {
+    **VITRINA_CREATE_EXAMPLE,
+    "categorias": [VITRINA_CATEGORIA_CREATE_EXAMPLE],
+    "items": [{**VITRINA_ITEM_CREATE_NESTED_EXAMPLE, "categoria_id": None}],
+}
 
 
 class VitrinaCreateNested(VitrinaCreate):
-    """Vitrina con sus categorías, creada dentro de la tarjeta."""
+    """
+    Vitrina con sus categorías y sus items, creada dentro de la tarjeta. Las
+    categorías todavía no tienen id, así que los items se crean sin categoría.
+    """
 
     categorias: list[VitrinaCategoriaCreate] = Field(default_factory=list, max_length=VITRINA_CATEGORIA_MAX)
+    items: list[VitrinaItemCreateNested] = Field(default_factory=list, max_length=VITRINA_ITEM_MAX)
 
     @field_validator("categorias", mode="after")
     @classmethod
@@ -153,16 +188,25 @@ class VitrinaCreateNested(VitrinaCreate):
         ensure_unique_nombre(value)
         return value
 
+    @field_validator("items", mode="after")
+    @classmethod
+    def validate_items(cls, value: list[VitrinaItemCreateNested]) -> list[VitrinaItemCreateNested]:
+        if any(item.categoria_id is not None for item in value):
+            raise ValueError("Al crear la vitrina los items van sin categoría; asígnala al editarla.")
+        return value
+
     model_config = ConfigDict(json_schema_extra={"example": VITRINA_CREATE_NESTED_EXAMPLE})
 
 
 class VitrinaUpdateNested(VitrinaUpdate):
     """
-    PATCH /vitrinas/{id}. categorias es el estado final deseado; eliminar una
+    PATCH /vitrinas/{id}. categorias e items son el estado final deseado. Un
+    item solo puede usar una categoría existente que se conserve; eliminar una
     categoría que usan items no eliminados responde 409 (AGENTS.md §19).
     """
 
     categorias: list[VitrinaCategoriaNestedItem] | None = Field(default=None, max_length=VITRINA_CATEGORIA_MAX)
+    items: list[VitrinaItemNestedItem] | None = Field(default=None, max_length=VITRINA_ITEM_MAX)
 
     @field_validator("categorias", mode="after")
     @classmethod
@@ -174,11 +218,17 @@ class VitrinaUpdateNested(VitrinaUpdate):
         ensure_unique_nombre(value)
         return validator_unique_ids(value)
 
+    @field_validator("items", mode="after")
+    @classmethod
+    def validate_items(cls, value: list[VitrinaItemNestedItem] | None) -> list[VitrinaItemNestedItem] | None:
+        return None if value is None else validator_unique_ids(value)
+
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
                 **_CAMPOS_EXAMPLE,
                 "categorias": [{**VITRINA_CATEGORIA_CREATE_EXAMPLE, "id": VITRINA_CATEGORIA_ID}],
+                "items": [{**VITRINA_ITEM_CREATE_NESTED_EXAMPLE, "id": VITRINA_ITEM_RESPONSE_DETAIL_EXAMPLE["id"]}],
             }
         }
     )
@@ -186,7 +236,14 @@ class VitrinaUpdateNested(VitrinaUpdate):
 
 class VitrinaResponseDetail(VitrinaResponse):
     categorias: list[VitrinaCategoriaResponse]
+    items: list[VitrinaItemResponseDetail]
 
     model_config = ConfigDict(
-        json_schema_extra={"example": {**VITRINA_RESPONSE_EXAMPLE, "categorias": [VITRINA_CATEGORIA_RESPONSE_EXAMPLE]}}
+        json_schema_extra={
+            "example": {
+                **VITRINA_RESPONSE_EXAMPLE,
+                "categorias": [VITRINA_CATEGORIA_RESPONSE_EXAMPLE],
+                "items": [VITRINA_ITEM_RESPONSE_DETAIL_EXAMPLE],
+            }
+        }
     )

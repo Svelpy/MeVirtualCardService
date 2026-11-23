@@ -34,8 +34,8 @@ ROLE_PERMISSIONS: dict[Role, dict[Module, frozenset[Action]]] = {
         Module.TARJETA_FAQ: frozenset({Action.AUDIT}),  # se edita desde la tarjeta
         Module.VITRINA: frozenset({Action.READ, Action.UPDATE, Action.AUDIT}),  # se crea y elimina con la tarjeta
         Module.VITRINA_CATEGORIA: frozenset({Action.AUDIT}),  # se edita desde la vitrina
-        Module.VITRINA_ITEM: frozenset({Action.CREATE, Action.READ, Action.UPDATE, Action.DELETE, Action.AUDIT}),
-        Module.VITRINA_ITEM_IMAGEN: frozenset({Action.AUDIT}),  # se edita desde el item
+        Module.VITRINA_ITEM: frozenset({Action.AUDIT}),  # se edita desde la vitrina
+        Module.VITRINA_ITEM_IMAGEN: frozenset({Action.AUDIT}),  # se edita desde la vitrina
         Module.IMAGEN: frozenset({Action.CREATE}),  # solo subir imágenes pendientes
     },
     Role.ADMIN: {
@@ -56,8 +56,8 @@ ROLE_PERMISSIONS: dict[Role, dict[Module, frozenset[Action]]] = {
         Module.TARJETA_FAQ: frozenset({Action.AUDIT}),  # se edita desde la tarjeta
         Module.VITRINA: frozenset({Action.READ, Action.UPDATE, Action.AUDIT}),  # se crea y elimina con la tarjeta
         Module.VITRINA_CATEGORIA: frozenset({Action.AUDIT}),  # se edita desde la vitrina
-        Module.VITRINA_ITEM: frozenset({Action.CREATE, Action.READ, Action.UPDATE, Action.DELETE, Action.AUDIT}),
-        Module.VITRINA_ITEM_IMAGEN: frozenset({Action.AUDIT}),  # se edita desde el item
+        Module.VITRINA_ITEM: frozenset({Action.AUDIT}),  # se edita desde la vitrina
+        Module.VITRINA_ITEM_IMAGEN: frozenset({Action.AUDIT}),  # se edita desde la vitrina
         Module.IMAGEN: frozenset({Action.CREATE}),  # solo subir imágenes pendientes
     },
     Role.USER: {
@@ -77,8 +77,8 @@ ROLE_PERMISSIONS: dict[Role, dict[Module, frozenset[Action]]] = {
         Module.TARJETA_FAQ: frozenset(),  # se edita desde la tarjeta; sin AUDIT
         Module.VITRINA: frozenset({Action.READ, Action.UPDATE}),  # se crea y elimina con la tarjeta; sin AUDIT
         Module.VITRINA_CATEGORIA: frozenset(),  # se edita desde la vitrina; sin AUDIT
-        Module.VITRINA_ITEM: frozenset({Action.CREATE, Action.READ, Action.UPDATE, Action.DELETE}),  # sin AUDIT
-        Module.VITRINA_ITEM_IMAGEN: frozenset(),  # se edita desde el item; sin AUDIT
+        Module.VITRINA_ITEM: frozenset(),  # se edita desde la vitrina; sin AUDIT
+        Module.VITRINA_ITEM_IMAGEN: frozenset(),  # se edita desde la vitrina; sin AUDIT
         Module.IMAGEN: frozenset({Action.CREATE}),  # solo subir imágenes pendientes
     },
 }

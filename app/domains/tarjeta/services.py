@@ -45,7 +45,9 @@ from app.domains.vitrina.repositories import VitrinaRepository
 from app.domains.vitrina.schemas import VitrinaCreateNested
 from app.domains.vitrina_categoria.models import VitrinaCategoria
 from app.domains.vitrina_categoria.repositories import VitrinaCategoriaRepository
+from app.domains.vitrina_item.models import VitrinaItem
 from app.domains.vitrina_item.repositories import VitrinaItemRepository
+from app.domains.vitrina_item_imagen.models import VitrinaItemImagen
 from app.domains.vitrina_item_imagen.repositories import VitrinaItemImagenRepository
 from app.shared.enums import ClaveSeccion
 from app.shared.errors.codes import ErrorCode
@@ -89,6 +91,11 @@ def tarjeta_scope_for(actor: CurrentUser) -> TarjetaScope:
 def tarjeta_image_folder(tarjeta_id: UUID) -> str:
     """Carpeta de Cloudinary de las imágenes de una tarjeta y de su árbol."""
     return f"tarjetas/{tarjeta_id}"
+
+
+def vitrina_image_folder(vitrina_id: UUID) -> str:
+    """Carpeta de las imágenes de los items de la vitrina (vitrina.id = tarjeta.id)."""
+    return f"{tarjeta_image_folder(vitrina_id)}/vitrina"
 
 
 def _not_found() -> AppException:
@@ -166,7 +173,13 @@ class TarjetaService:
         new_images = {field: url for field in IMAGE_FIELDS if (url := getattr(data, field)) is not None}
         if data.seo is not None and data.seo.og_image_url is not None:
             new_images["seo -> og_image_url"] = data.seo.og_image_url
-        await ImagenService.ensure_new_images(db_session, new_images, settings)
+        vitrina = data.vitrina or VitrinaCreateNested()
+        vitrina_images = {
+            f"vitrina -> items -> {index} -> imagenes -> {position} -> url": imagen.url
+            for index, item in enumerate(vitrina.items)
+            for position, imagen in enumerate(item.imagenes)
+        }
+        await ImagenService.ensure_new_images(db_session, {**new_images, **vitrina_images}, settings)
 
         now = utc_now()
         audit = {"created_at": now, "updated_at": now, "created_by": actor.id}
@@ -178,10 +191,14 @@ class TarjetaService:
         colors = THEME_PRESETS[theme.preset]
         db_session.add(TarjetaTheme(id=tarjeta.id, **theme.model_dump(), **colors, **audit))
         db_session.add(TarjetaSeo(id=tarjeta.id, **(data.seo.model_dump() if data.seo else {}), **audit))
-        vitrina = data.vitrina or VitrinaCreateNested()
-        db_session.add(Vitrina(id=tarjeta.id, **vitrina.model_dump(exclude={"categorias"}), **audit))
+        db_session.add(Vitrina(id=tarjeta.id, **vitrina.model_dump(exclude={"categorias", "items"}), **audit))
         for categoria in vitrina.categorias:
             db_session.add(VitrinaCategoria(vitrina_id=tarjeta.id, **categoria.model_dump(), **audit))
+        for item in vitrina.items:
+            vitrina_item = VitrinaItem(vitrina_id=tarjeta.id, **item.model_dump(exclude={"imagenes"}), **audit)
+            db_session.add(vitrina_item)
+            for imagen in item.imagenes:
+                db_session.add(VitrinaItemImagen(item_id=vitrina_item.id, **imagen.model_dump(), **audit))
         for orden, clave in enumerate(ClaveSeccion):
             db_session.add(TarjetaSeccion(tarjeta_id=tarjeta.id, clave=clave, orden=orden, **audit))
         for field, model in SIMPLE_CHILDREN.items():
@@ -195,6 +212,7 @@ class TarjetaService:
 
         await db_session.commit()
         await ImagenService.confirm(new_images.values(), tarjeta_image_folder(tarjeta.id), settings)
+        await ImagenService.confirm(vitrina_images.values(), vitrina_image_folder(tarjeta.id), settings)
         return await TarjetaService.get(db_session, tarjeta.id, actor)
 
     @staticmethod

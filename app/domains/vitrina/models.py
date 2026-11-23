@@ -8,6 +8,7 @@ from app.core.base_model import BaseModel
 
 if TYPE_CHECKING:
     from app.domains.vitrina_categoria.models import VitrinaCategoria
+    from app.domains.vitrina_item.models import VitrinaItem
 
 
 class Vitrina(BaseModel, table=True):
@@ -24,7 +25,10 @@ class Vitrina(BaseModel, table=True):
     campo3_nombre: str | None = Field(default=None, sa_type=String(40), nullable=True)
     campo4_nombre: str | None = Field(default=None, sa_type=String(40), nullable=True)
 
-    # Hijas embebidas. Los items son hijas paginadas: se listan con ?vitrina_id=.
+    # Hijas embebidas.
     categorias: list["VitrinaCategoria"] = Relationship(
         sa_relationship_kwargs={"lazy": "raise", "order_by": "[VitrinaCategoria.orden, VitrinaCategoria.created_at]"}
+    )
+    items: list["VitrinaItem"] = Relationship(
+        sa_relationship_kwargs={"lazy": "raise", "order_by": "[VitrinaItem.orden, VitrinaItem.created_at]"}
     )
