@@ -20,7 +20,6 @@ from app.domains.auth.schemas import (
     VerifyEmail,
 )
 from app.domains.auth.services import AuthService
-from app.domains.usuario.schemas import UsuarioResponseDetail
 from app.middlewares.limiter import limiter
 from app.shared.errors.exceptions import body_validation_error
 from app.shared.schemas.errors import error_responses
@@ -69,11 +68,27 @@ def _clear_refresh_cookie(response: Response, settings: Settings) -> None:
 
 @router.post(
     "/register",
-    response_model=UsuarioResponseDetail,
     status_code=status.HTTP_201_CREATED,
+    response_class=Response,
     summary="Registrarse",
-    description="Crea un usuario con plan free y envía el enlace de verificación del email.",
-    responses=error_responses(409, 422, 429, 500),
+    description=(
+        "Crea el usuario (plan free, email sin verificar) y su tarjeta, obligatoria, en una sola transacción, "
+        "y envía el enlace de verificación del email. Si el email o el slug ya están en uso responde 409 y "
+        "no crea nada. No inicia sesión: el siguiente paso es POST /auth/login."
+    ),
+    responses={
+        # RFC 9110 §15.3.2: el cuerpo de un 201 es opcional; Location identifica el recurso creado.
+        status.HTTP_201_CREATED: {
+            "description": "Usuario y tarjeta creados. Sin contenido.",
+            "headers": {
+                "Location": {
+                    "description": "El usuario creado: GET /api/v1/usuarios/me (requiere iniciar sesión).",
+                    "schema": {"type": "string", "example": "/api/v1/usuarios/me"},
+                }
+            },
+        },
+        **error_responses(409, 422, 429, 500),
+    },
 )
 @limiter.limit("5/minute")
 async def register(
@@ -81,8 +96,9 @@ async def register(
     data: UserRegister,
     db_session: Annotated[AsyncSession, Depends(get_db)],
     settings: Annotated[Settings, Depends(get_settings)],
-) -> UsuarioResponseDetail:
-    return await AuthService.register(db_session, data, settings)
+) -> Response:
+    await AuthService.register(db_session, data, settings)
+    return Response(status_code=status.HTTP_201_CREATED, headers={"Location": "/api/v1/usuarios/me"})
 
 
 @router.post(

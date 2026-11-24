@@ -35,6 +35,8 @@ from app.domains.auth.schemas import (
     UserRegister,
     VerifyEmail,
 )
+from app.domains.tarjeta.schemas import TarjetaCreateNested
+from app.domains.tarjeta.services import TarjetaService
 from app.domains.usuario.models import Usuario
 from app.domains.usuario.repositories import UsuarioRepository
 from app.domains.usuario.services import UsuarioService
@@ -85,16 +87,27 @@ def _is_pending(token: PasswordResetToken | EmailVerificationToken | None, now: 
 
 class AuthService:
     @staticmethod
-    async def register(db_session: AsyncSession, data: UserRegister, settings: Settings) -> Usuario:
-        """Rol user, plan free y el email sin verificar; envía el enlace de verificación."""
+    async def register(db_session: AsyncSession, data: UserRegister, settings: Settings) -> None:
+        """
+        Usuario (rol user, plan free, email sin verificar) y su tarjeta con todo su
+        árbol, en una sola transacción: si el email o el slug ya están en uso (409),
+        no se crea nada. Envía el enlace de verificación. No inicia sesión.
+        """
         usuario = await UsuarioService.add_new(
             db_session, email=data.email, password=data.password, rol=Role.USER, created_by=None
         )
         usuario.created_by = usuario.id
+        # Sin imágenes: el registro no las acepta, así que no hay nada que confirmar.
+        await TarjetaService.add_new(
+            db_session,
+            TarjetaCreateNested(**data.tarjeta.model_dump(exclude_unset=True)),
+            user_id=usuario.id,
+            created_by=usuario.id,
+            settings=settings,
+        )
         token = await AuthService._issue_email_verification(db_session, usuario.id, settings)
         await db_session.commit()
         await AuthService._send_verification_email(settings, usuario.email, token)
-        return await UsuarioService.get(db_session, usuario.id)
 
     @staticmethod
     async def login(

@@ -1215,6 +1215,12 @@ PATCH /{id}       <X>UpdateNested → <X>ResponseDetail       <X>Update → <X>R
   cuando no hay cambios.
 - Las operaciones que no crean ni modifican un recurso por su id, como subir un
   archivo o emitir tokens, conservan su propia respuesta.
+- **Excepción de `POST /auth/register`:** crea el usuario y su tarjeta
+  (obligatoria, `TarjetaRegistro`: datos básicos y preset, sin imágenes porque
+  subirlas exige sesión) en una sola transacción, con `TarjetaService.add_new`,
+  el mismo que usa `POST /tarjetas`. Responde `201` sin cuerpo y con
+  `Location: /api/v1/usuarios/me` (RFC 9110 §15.3.2: el cuerpo de un 201 es
+  opcional). No inicia sesión: el cliente hace login después.
 - `GET /{id}/audit` reutiliza el mismo `get` que `GET /{id}`, con
   `include_deleted=True` (§19). Solo cambian el `response_model`, los permisos,
   la información expuesta y las relaciones que carga el repository.

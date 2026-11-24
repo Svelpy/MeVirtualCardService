@@ -1,6 +1,7 @@
 """API de auth contra la base de desarrollo, dentro de una transacción revertida."""
 
 import re
+from uuid import uuid4
 
 from sqlalchemy import select
 
@@ -31,18 +32,38 @@ async def _refresh(client, csrf_token: str | None, refresh_token: str | None = N
 
 # ---------- Registro y verificación ----------
 
-async def test_registro_crea_un_user_free_sin_verificar_y_envia_el_enlace(client, sent_emails):
-    response = await client.post(f"{BASE}/register", json={"email": "Ana@Test.Example.com", "password": PASSWORD})
+def _registro(email: str = "Ana@Test.Example.com", **tarjeta) -> dict:
+    return {
+        "email": email,
+        "password": PASSWORD,
+        "tarjeta": {"slug": f"ana-{uuid4().hex[:8]}", "rubro": "Pediatría", "nombres": "Ana María", **tarjeta},
+    }
+
+
+async def test_registro_crea_usuario_y_tarjeta_sin_contenido_y_envia_el_enlace(client, sent_emails):
+    body = _registro(prefijo="Dra.", apellidos="Pérez Quispe", cargo="Médica pediatra", theme={"preset": "salud"})
+    response = await client.post(f"{BASE}/register", json=body)
     assert response.status_code == 201
-    body = response.json()
-    assert (body["email"], body["rol"], body["plan"]["id"]) == ("ana@test.example.com", "user", str(PLAN_FREE_ID))
-    assert body["email_verified_at"] is None
+    assert response.content == b"" and response.headers["location"] == "/api/v1/usuarios/me"
     assert [email["to"] for email in sent_emails] == ["ana@test.example.com"]
+
+    # No inicia sesión: el siguiente paso es el login con sus datos.
+    login = await _login(client, "ana@test.example.com")
+    assert login.status_code == 200
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    me = (await client.get("/api/v1/usuarios/me", headers=headers)).json()
+    assert (me["email"], me["rol"], me["plan"]["id"]) == ("ana@test.example.com", "user", str(PLAN_FREE_ID))
+    assert me["email_verified_at"] is None
+    tarjeta = me["tarjeta"]
+    assert tarjeta["user_id"] == me["id"] and tarjeta["slug"] == body["tarjeta"]["slug"]
+    assert (tarjeta["prefijo"], tarjeta["apellidos"], tarjeta["cargo"]) == ("Dra.", "Pérez Quispe", "Médica pediatra")
+    assert (tarjeta["is_public"], tarjeta["theme"]["preset"], tarjeta["theme"]["tipografia"]) == (False, "salud", 1)
+    assert len(tarjeta["secciones"]) == 8 and tarjeta["vitrina"]["moneda"] == "BOB"
+    assert tarjeta["contactos"] == [] and tarjeta["vitrina"]["items"] == []
 
     token = _token_from(sent_emails[0])
     assert (await client.post(f"{BASE}/verify-email", json={"token": token})).status_code == 204
-    login = await _login(client, "ana@test.example.com")
-    me = await client.get("/api/v1/usuarios/me", headers={"Authorization": f"Bearer {login.json()['access_token']}"})
+    me = await client.get("/api/v1/usuarios/me", headers=headers)
     assert me.json()["email_verified_at"] is not None
 
     # Un solo uso.
@@ -51,13 +72,39 @@ async def test_registro_crea_un_user_free_sin_verificar_y_envia_el_enlace(client
     assert "token" in response.json()["details"]
 
 
-async def test_registro_rechaza_email_repetido_y_datos_invalidos(client, user):
-    response = await client.post(f"{BASE}/register", json={"email": user.email, "password": PASSWORD})
+async def test_registro_sin_theme_usa_el_preset_claro(client):
+    assert (await client.post(f"{BASE}/register", json=_registro("sintheme@test.example.com"))).status_code == 201
+    login = await _login(client, "sintheme@test.example.com")
+    me = await client.get("/api/v1/usuarios/me", headers={"Authorization": f"Bearer {login.json()['access_token']}"})
+    assert me.json()["tarjeta"]["theme"]["preset"] == "claro"
+
+
+async def test_registro_con_email_o_slug_en_uso_no_crea_nada(client, user):
+    response = await client.post(f"{BASE}/register", json=_registro(user.email))
     assert response.status_code == 409
+
+    ocupada = await client.post(
+        "/api/v1/tarjetas/", json={"slug": f"ocupado-{uuid4().hex[:6]}", "rubro": "X", "nombres": "Ana"},
+        headers=auth_header(user),
+    )
+    response = await client.post(f"{BASE}/register", json=_registro("nuevo@test.example.com", slug=ocupada.json()["slug"]))
+    assert response.status_code == 409
+    assert response.json()["details"] == {"slug": "Ya está en uso."}
+    assert (await _login(client, "nuevo@test.example.com")).status_code == 401  # el usuario tampoco se creó
+
+
+async def test_registro_rechaza_datos_invalidos(client):
+    valido = _registro("x@test.example.com")
     for body in (
-        {"email": "x@test.example.com", "password": "corta"},
-        {"email": "no-es-email", "password": PASSWORD},
-        {"email": "x@test.example.com", "password": PASSWORD, "rol": "admin"},
+        {"email": "x@test.example.com", "password": PASSWORD},  # sin tarjeta
+        {**valido, "password": "corta"},
+        {**valido, "email": "no-es-email"},
+        {**valido, "rol": "admin"},
+        {**valido, "tarjeta": {**valido["tarjeta"], "nombres": None}},
+        {**valido, "tarjeta": {**valido["tarjeta"], "slug": "Con-Mayusculas"}},
+        {**valido, "tarjeta": {**valido["tarjeta"], "profile_url": "https://res.cloudinary.com/x.jpg"}},
+        {**valido, "tarjeta": {**valido["tarjeta"], "theme": {"preset": "salud", "tipografia": 3}}},
+        {**valido, "tarjeta": {**valido["tarjeta"], "theme": {"preset": "neon"}}},
     ):
         assert (await client.post(f"{BASE}/register", json=body)).status_code == 422, body
 

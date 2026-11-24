@@ -216,6 +216,61 @@ class TarjetaCreate(SchemaBase):
     model_config = ConfigDict(json_schema_extra={"example": TARJETA_CREATE_EXAMPLE})
 
 
+TARJETA_REGISTRO_EXAMPLE = {
+    "slug": "dra-ana-perez",
+    "rubro": "Pediatría",
+    "prefijo": "Dra.",
+    "nombres": "Ana María",
+    "apellidos": "Pérez Quispe",
+    "cargo": "Médica pediatra",
+    "theme": {"preset": "salud"},
+}
+
+
+class TarjetaRegistro(SchemaBase):
+    """
+    La tarjeta que se crea con el registro público (POST /auth/register), con
+    lo mínimo para empezar. Sin imágenes: subirlas exige sesión. El resto de la
+    tarjeta (empresa, imágenes, seo, vitrina, contactos...) se completa después
+    con sus rutas de edición.
+    """
+
+    slug: str = Field(min_length=3, max_length=80)
+    rubro: str = Field(max_length=150)
+    prefijo: str | None = Field(default=None, max_length=30)
+    nombres: str = Field(max_length=150)
+    apellidos: str | None = Field(default=None, max_length=150)
+    cargo: str | None = Field(default=None, max_length=150)
+    theme: TarjetaThemeCreate | None = None  # sin theme: preset claro
+
+    @field_validator("slug", mode="before")
+    @classmethod
+    def validate_slug(cls, value: object) -> str:
+        return validator_slug(value)
+
+    @field_validator("rubro", mode="before")
+    @classmethod
+    def validate_rubro(cls, value: object) -> str:
+        return validator_non_empty_text(value)
+
+    @field_validator("nombres", mode="before")
+    @classmethod
+    def validate_nombres(cls, value: object) -> str:
+        return validator_name(value)
+
+    @field_validator("apellidos", mode="before")
+    @classmethod
+    def validate_apellidos(cls, value: object) -> str | None:
+        return None if value is None else validator_name(value)
+
+    @field_validator("prefijo", "cargo", mode="before")
+    @classmethod
+    def validate_texto_opcional(cls, value: object) -> str | None:
+        return None if value is None else validator_non_empty_text(value)
+
+    model_config = ConfigDict(json_schema_extra={"example": TARJETA_REGISTRO_EXAMPLE})
+
+
 class TarjetaUpdate(SchemaBase):
     """Cambiar el slug libera el anterior; el QR sigue funcionando porque apunta al id."""
 

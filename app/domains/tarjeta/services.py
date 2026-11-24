@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 from uuid import UUID
@@ -88,6 +89,14 @@ def tarjeta_scope_for(actor: CurrentUser) -> TarjetaScope:
     return TarjetaScope()  # alcance vacío: no devuelve filas
 
 
+@dataclass(frozen=True)
+class NewImages:
+    """URLs nuevas de una tarjeta recién agregada, por carpeta: se confirman después del commit."""
+
+    tarjeta: list[str]
+    vitrina: list[str]
+
+
 def tarjeta_image_folder(tarjeta_id: UUID) -> str:
     """Carpeta de Cloudinary de las imágenes de una tarjeta y de su árbol."""
     return f"tarjetas/{tarjeta_id}"
@@ -162,12 +171,32 @@ class TarjetaService:
         actor: CurrentUser,
         settings: Settings,
     ) -> Tarjeta:
+        """La crea su dueño, una por usuario, con su árbol en una sola transacción."""
+        tarjeta, images = await TarjetaService.add_new(
+            db_session, data, user_id=actor.id, created_by=actor.id, settings=settings
+        )
+        await db_session.commit()
+        await ImagenService.confirm(images.tarjeta, tarjeta_image_folder(tarjeta.id), settings)
+        await ImagenService.confirm(images.vitrina, vitrina_image_folder(tarjeta.id), settings)
+        return await TarjetaService.get(db_session, tarjeta.id, actor)
+
+    @staticmethod
+    async def add_new(
+        db_session: AsyncSession,
+        data: TarjetaCreateNested,
+        *,
+        user_id: UUID,
+        created_by: UUID,
+        settings: Settings,
+    ) -> tuple[Tarjeta, NewImages]:
         """
-        La crea su dueño, una por usuario, con su árbol en una sola transacción.
-        Sin theme, seo o vitrina se crean con sus valores por defecto (theme
-        claro); las 8 secciones las crea siempre el service.
+        Agrega a la sesión la tarjeta de user_id con todo su árbol, sin commit. Lo
+        comparten POST /tarjetas y el registro público, que crea usuario y tarjeta
+        en la misma transacción. Sin theme, seo o vitrina se crean con sus valores
+        por defecto (theme claro); las 8 secciones las crea siempre el service.
+        Devuelve las imágenes nuevas, que se confirman después del commit.
         """
-        if await TarjetaRepository.exists_for_user(db_session, actor.id):
+        if await TarjetaRepository.exists_for_user(db_session, user_id):
             raise _conflict("Ya tienes una tarjeta.")
         await TarjetaService._ensure_slug_available(db_session, data.slug)
         new_images = {field: url for field in IMAGE_FIELDS if (url := getattr(data, field)) is not None}
@@ -182,8 +211,8 @@ class TarjetaService:
         await ImagenService.ensure_new_images(db_session, {**new_images, **vitrina_images}, settings)
 
         now = utc_now()
-        audit = {"created_at": now, "updated_at": now, "created_by": actor.id}
-        tarjeta = Tarjeta(**data.model_dump(include=TARJETA_FIELDS), user_id=actor.id, **audit)
+        audit = {"created_at": now, "updated_at": now, "created_by": created_by}
+        tarjeta = Tarjeta(**data.model_dump(include=TARJETA_FIELDS), user_id=user_id, **audit)
         db_session.add(tarjeta)
         await db_session.flush()  # el árbol apunta a tarjeta.id
 
@@ -209,11 +238,8 @@ class TarjetaService:
             db_session.add(ubicacion)
             for horario in item.horarios:
                 db_session.add(UbicacionHorario(ubicacion_id=ubicacion.id, **horario.model_dump(), **audit))
-
-        await db_session.commit()
-        await ImagenService.confirm(new_images.values(), tarjeta_image_folder(tarjeta.id), settings)
-        await ImagenService.confirm(vitrina_images.values(), vitrina_image_folder(tarjeta.id), settings)
-        return await TarjetaService.get(db_session, tarjeta.id, actor)
+        await db_session.flush()
+        return tarjeta, NewImages(tarjeta=list(new_images.values()), vitrina=list(vitrina_images.values()))
 
     @staticmethod
     async def update(

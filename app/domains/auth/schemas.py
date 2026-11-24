@@ -4,6 +4,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
+from app.domains.tarjeta.schemas import TARJETA_REGISTRO_EXAMPLE, TarjetaRegistro
 from app.shared.enums import Role
 from app.shared.services.validators import (
     validator_email,
@@ -15,11 +16,13 @@ from app.shared.services.validators import (
 class UserRegister(BaseModel):
     """
     Registro público: crea un usuario con rol user, plan free y el email sin
-    verificar. Sin verificar puede iniciar sesión, pero no publicar su tarjeta.
+    verificar, y su tarjeta (obligatoria) en la misma transacción. Sin verificar
+    puede iniciar sesión, pero no publicar su tarjeta.
     """
 
     email: EmailStr = Field(max_length=255)
     password: str
+    tarjeta: TarjetaRegistro
 
     @field_validator("email", mode="before")
     @classmethod
@@ -33,7 +36,9 @@ class UserRegister(BaseModel):
 
     model_config = ConfigDict(
         extra="forbid",
-        json_schema_extra={"example": {"email": "ana@example.com", "password": "ClaveSegura123"}},
+        json_schema_extra={
+            "example": {"email": "ana@example.com", "password": "ClaveSegura123", "tarjeta": TARJETA_REGISTRO_EXAMPLE}
+        },
     )
 
 
