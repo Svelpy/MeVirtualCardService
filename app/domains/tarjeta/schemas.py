@@ -125,6 +125,7 @@ from app.shared.services.validators import (
 
 
 TARJETA_ID = "3f1c2a9e-8b7d-4c6e-9a1b-2c3d4e5f6a7b"
+_USER_ID = "8f14e45f-ceea-467a-9575-6b3f0c1a2b3c"
 
 _CAMPOS_EXAMPLE = {
     "slug": "dra-ana-perez",
@@ -142,10 +143,11 @@ _CAMPOS_EXAMPLE = {
     "cover_url": "https://res.cloudinary.com/demo/image/upload/v1/portada.jpg",
     "qr_pago_url": "https://res.cloudinary.com/demo/image/upload/v1/qr-pago.png",
 }
-TARJETA_CREATE_EXAMPLE = _CAMPOS_EXAMPLE
+TARJETA_CREATE_EXAMPLE = {"user_id": _USER_ID, **_CAMPOS_EXAMPLE}
+TARJETA_UPDATE_EXAMPLE = _CAMPOS_EXAMPLE
 TARJETA_RESPONSE_EXAMPLE = {
     "id": TARJETA_ID,
-    "user_id": "8f14e45f-ceea-467a-9575-6b3f0c1a2b3c",
+    "user_id": _USER_ID,
     **_CAMPOS_EXAMPLE,
     "is_public": True,
     "published_at": "2026-01-20T10:00:00Z",
@@ -163,11 +165,14 @@ _URL_FIELDS = ("profile_url", "photo_usuario_url", "logo_empresa_url", "cover_ur
 
 class TarjetaCreate(SchemaBase):
     """
-    user_id sale del actor autenticado. is_public y published_at cambian solo
-    con las acciones publicar / despublicar. Las URLs de imagen son las que
-    devolvió POST /imagenes/uploads; el service comprueba su origen.
+    user_id es el dueño: sin enviarlo, la tarjeta es del actor; un admin lo
+    envía para crear la tarjeta de otro usuario. El service lo valida con el
+    alcance del actor. is_public y published_at cambian solo con las acciones
+    publicar / despublicar. Las URLs de imagen son las que devolvió
+    POST /imagenes/uploads; el service comprueba su origen.
     """
 
+    user_id: UUID | None = None
     slug: str = Field(min_length=3, max_length=80)
     rubro: str = Field(max_length=150)
     prefijo: str | None = Field(default=None, max_length=30)
@@ -319,7 +324,7 @@ class TarjetaUpdate(SchemaBase):
     def validate_url(cls, value: object) -> str | None:
         return None if value is None else validator_https_url(value)
 
-    model_config = ConfigDict(json_schema_extra={"example": TARJETA_CREATE_EXAMPLE})
+    model_config = ConfigDict(json_schema_extra={"example": TARJETA_UPDATE_EXAMPLE})
 
 
 class TarjetaResponse(SchemaBase):
@@ -429,10 +434,10 @@ class TarjetasDespublicadasResponse(SchemaBase):
 
 class TarjetaCreateNested(TarjetaCreate):
     """
-    POST /tarjetas: la tarjeta con su árbol, en una sola transacción. theme,
-    seo y vitrina son opcionales: sin ellos el service los crea con sus valores
-    por defecto (theme con el preset claro). Las 8 secciones las crea siempre el
-    service.
+    POST /tarjetas: la tarjeta con su árbol, en una sola transacción, del actor
+    o, si un admin envía user_id, de ese usuario. theme, seo y vitrina son
+    opcionales: sin ellos el service los crea con sus valores por defecto
+    (theme con el preset claro). Las 8 secciones las crea siempre el service.
     """
 
     theme: TarjetaThemeCreate | None = None
@@ -521,7 +526,7 @@ class TarjetaUpdateNested(TarjetaUpdate):
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
-                **TARJETA_CREATE_EXAMPLE,
+                **TARJETA_UPDATE_EXAMPLE,
                 "secciones": TARJETA_SECCION_NESTED_EXAMPLES,
                 "contactos": TARJETA_CONTACTO_NESTED_EXAMPLES,
                 "ubicaciones": TARJETA_UBICACION_NESTED_EXAMPLES,
@@ -624,7 +629,7 @@ class TarjetaResponseDetail(TarjetaResponse):
 
 
 # =================================
-# Vista del dueño (GET /usuarios/me)
+# Tarjeta completa (GET /usuarios/me y GET /tarjetas/{id}/completa)
 # =================================
 
 TARJETA_RESPONSE_ME_EXAMPLE = {
@@ -646,7 +651,9 @@ class TarjetaResponseMe(TarjetaResponse):
     """
     La tarjeta completa, tal como la ve su dueño: el mismo árbol que la lectura
     pública por slug, pero con todas las filas (visibles y ocultas), sin quitar
-    precios y con is_visible, orden y fechas, para que decida qué editar.
+    precios y con is_visible, orden y fechas, para que decida qué editar. La
+    devuelven GET /usuarios/me (embebida) y GET /tarjetas/{id}/completa, que la
+    usa un admin para editar la tarjeta de otro usuario.
 
     Excepción a §17: theme, seo y vitrina son Extensiones 1:1 con rutas propias,
     pero aquí se embeben para entregar la tarjeta en una sola llamada. Se editan

@@ -52,7 +52,7 @@ def test_update_conserva_false():
 
 def test_los_schemas_rechazan_campos_desconocidos():
     with pytest.raises(ValidationError, match="extra"):
-        TarjetaCreate(**TARJETA_MINIMA, user_id=VITRINA_ID)
+        TarjetaCreate(**TARJETA_MINIMA, id=VITRINA_ID)  # el id lo genera el sistema
     with pytest.raises(ValidationError, match="extra"):
         TarjetaUpdate(is_public=True)  # el estado cambia solo con acciones
     with pytest.raises(ValidationError, match="extra"):

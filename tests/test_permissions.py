@@ -59,10 +59,10 @@ def test_filas_fijas_y_kardex_no_admiten_todas_las_acciones():
         assert not has_permission(role, Module.PAGO, Action.UPDATE)
 
 
-def test_la_tarjeta_solo_la_crea_su_duenio():
-    assert has_permission(Role.USER, Module.TARJETA, Action.CREATE)
-    assert not has_permission(Role.ADMIN, Module.TARJETA, Action.CREATE)
-    assert not has_permission(Role.SUPERADMIN, Module.TARJETA, Action.CREATE)
+def test_la_tarjeta_la_crean_su_duenio_y_los_admins():
+    # El alcance decide de quién: el dueño, la suya; un admin, la de cualquier usuario.
+    for role in (Role.USER, Role.ADMIN, Role.SUPERADMIN):
+        assert has_permission(role, Module.TARJETA, Action.CREATE)
 
 
 def test_jerarquia_estricta():

@@ -309,6 +309,26 @@ async def test_me_trae_la_tarjeta_completa_como_la_ve_su_dueno(client, db_sessio
     assert (await client.get("/api/v1/usuarios/me", headers=auth_header(user))).json()["tarjeta"] is None
 
 
+async def test_completa_trae_lo_mismo_que_me_y_aplica_el_alcance(client, db_session, admin, user):
+    tarjeta = await _crear(client, user)
+    url = f"{TARJETAS}/{tarjeta['id']}/completa"
+    mia = (await client.get("/api/v1/usuarios/me", headers=auth_header(user))).json()["tarjeta"]
+
+    propia = await client.get(url, headers=auth_header(user))
+    assert propia.status_code == 200
+    assert propia.json() == mia
+    # Un admin la ve igual que su dueño, sin los datos del usuario.
+    completa = (await client.get(url, headers=auth_header(admin))).json()
+    assert completa == mia and "user" not in completa
+
+    # Fuera del alcance, inexistente o eliminada: 404.
+    otro = await create_usuario(db_session, "otro@test.example.com")
+    assert (await client.get(url, headers=auth_header(otro))).status_code == 404
+    assert (await client.get(f"{TARJETAS}/{uuid4()}/completa", headers=auth_header(admin))).status_code == 404
+    await client.delete(f"{TARJETAS}/{tarjeta['id']}", headers=auth_header(user))
+    assert (await client.get(url, headers=auth_header(admin))).status_code == 404
+
+
 async def test_la_lectura_publica_exige_dueno_activo_y_plan_vigente(client, db_session, admin):
     vencido = await create_usuario(db_session, "vence@test.example.com", plan_vence_at_days=1)
     tarjeta = await _crear(client, vencido)

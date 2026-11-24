@@ -14,6 +14,7 @@ from app.domains.tarjeta.schemas import (
     TarjetaResponseAudit,
     TarjetaResponseDetail,
     TarjetaResponseItemList,
+    TarjetaResponseMe,
     TarjetaSlugDisponibleResponse,
     TarjetaUpdateNested,
     TarjetasDespublicadasResponse,
@@ -143,6 +144,25 @@ async def get_tarjeta(
 
 
 @router.get(
+    "/{tarjeta_id}/completa",
+    response_model=TarjetaResponseMe,
+    summary="Obtener una tarjeta completa",
+    description=(
+        "Todo su árbol en una sola llamada, igual que la tarjeta de GET /usuarios/me: theme, seo, todas sus "
+        "hijas (visibles y ocultas) y la vitrina con categorías, items e imágenes, sin los datos del usuario. "
+        "Un admin ve cualquiera; un usuario, solo la suya. Cada parte se edita en su propia ruta."
+    ),
+    responses=error_responses(401, 403, 404, 422, 500),
+)
+async def get_tarjeta_completa(
+    tarjeta_id: UUID,
+    current_user: Annotated[CurrentUser, Depends(require_permission(Module.TARJETA, Action.READ))],
+    db_session: Annotated[AsyncSession, Depends(get_db)],
+) -> TarjetaResponseMe:
+    return await TarjetaService.get_full(db_session, tarjeta_id, current_user)
+
+
+@router.get(
     "/{tarjeta_id}/audit",
     response_model=TarjetaResponseAudit,
     summary="Auditar una tarjeta",
@@ -160,9 +180,11 @@ async def audit_tarjeta(
     "/",
     response_model=TarjetaResponseDetail,
     status_code=status.HTTP_201_CREATED,
-    summary="Crear mi tarjeta",
+    summary="Crear una tarjeta",
     description=(
-        "Una por usuario, con su árbol en una sola transacción. Se crea despublicada; sin theme, seo o "
+        "Una por usuario, con su árbol en una sola transacción. Sin user_id se crea la propia; un admin "
+        "envía user_id para crear la de otro usuario (422 si no existe o, para un usuario, si no es el "
+        "suyo; 409 si ya tiene una). Se crea despublicada; sin theme, seo o "
         "vitrina se crean con sus valores por defecto (theme claro) y las 8 secciones las crea siempre el "
         "sistema. Las URLs de imagen son las de POST /imagenes/uploads."
     ),

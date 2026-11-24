@@ -64,7 +64,8 @@ from app.shared.services.permissions import TARJETA_GLOBAL_SCOPE_ROLES, TARJETA_
 
 # Campos con una URL de POST /imagenes/uploads.
 IMAGE_FIELDS = ("profile_url", "photo_usuario_url", "logo_empresa_url", "cover_url", "qr_pago_url")
-TARJETA_FIELDS = frozenset(TarjetaCreate.model_fields)
+# Columnas propias de la tarjeta; user_id lo resuelve el service.
+TARJETA_FIELDS = frozenset(TarjetaCreate.model_fields) - {"user_id"}
 
 # Hijas embebidas sin nietos: campo del schema → model. Las secciones (fijas) y
 # las ubicaciones (con sus horarios) tienen su propio tratamiento.
@@ -115,6 +116,15 @@ def _conflict(message: str, details: dict[str, str] | None = None) -> AppExcepti
     return AppException(message, status.HTTP_409_CONFLICT, ErrorCode.CONFLICT, details=details)
 
 
+def _invalid(field: str, message: str) -> AppException:
+    return AppException(
+        "Los datos enviados no son válidos.",
+        status.HTTP_422_UNPROCESSABLE_CONTENT,
+        ErrorCode.VALIDATION_ERROR,
+        details={field: message},
+    )
+
+
 class TarjetaService:
     @staticmethod
     async def list(
@@ -152,6 +162,17 @@ class TarjetaService:
         return tarjeta
 
     @staticmethod
+    async def get_full(db_session: AsyncSession, tarjeta_id: UUID, actor: CurrentUser) -> Tarjeta:
+        """
+        La tarjeta con todo su árbol, igual que la de GET /usuarios/me. Con el
+        alcance del actor: un admin, cualquiera; un usuario, solo la suya.
+        """
+        tarjeta = await TarjetaRepository.get_full(db_session, tarjeta_id, scope=tarjeta_scope_for(actor))
+        if tarjeta is None:
+            raise _not_found()
+        return tarjeta
+
+    @staticmethod
     async def get_public(
         db_session: AsyncSession,
         *,
@@ -171,9 +192,13 @@ class TarjetaService:
         actor: CurrentUser,
         settings: Settings,
     ) -> Tarjeta:
-        """La crea su dueño, una por usuario, con su árbol en una sola transacción."""
+        """
+        Una por usuario, con su árbol en una sola transacción. Sin user_id es la
+        del actor; con user_id, la de ese usuario (un admin crea la de otro).
+        """
+        user_id = await TarjetaService._owner_id(db_session, data.user_id, actor)
         tarjeta, images = await TarjetaService.add_new(
-            db_session, data, user_id=actor.id, created_by=actor.id, settings=settings
+            db_session, data, user_id=user_id, created_by=actor.id, settings=settings
         )
         await db_session.commit()
         await ImagenService.confirm(images.tarjeta, tarjeta_image_folder(tarjeta.id), settings)
@@ -197,7 +222,7 @@ class TarjetaService:
         Devuelve las imágenes nuevas, que se confirman después del commit.
         """
         if await TarjetaRepository.exists_for_user(db_session, user_id):
-            raise _conflict("Ya tienes una tarjeta.")
+            raise _conflict("Ya tienes una tarjeta." if user_id == created_by else "El usuario ya tiene una tarjeta.")
         await TarjetaService._ensure_slug_available(db_session, data.slug)
         new_images = {field: url for field in IMAGE_FIELDS if (url := getattr(data, field)) is not None}
         if data.seo is not None and data.seo.og_image_url is not None:
@@ -420,6 +445,24 @@ class TarjetaService:
         """
         tarjeta = await TarjetaRepository.get_by_slug(db_session, slug)
         return tarjeta is None or (actor is not None and tarjeta.user_id == actor.id)
+
+    @staticmethod
+    async def _owner_id(db_session: AsyncSession, user_id: UUID | None, actor: CurrentUser) -> UUID:
+        """
+        Dueño de una tarjeta nueva: sin user_id, el actor. Como toda referencia
+        recibida (§22), el usuario existe, no está eliminado y está dentro del
+        alcance del actor: un admin elige a cualquiera; un usuario, solo a sí mismo.
+        Si no, 422, sin revelar si el usuario existe.
+        """
+        owner_id = actor.id if user_id is None else user_id
+        scope = tarjeta_scope_for(actor)
+        if scope.all:
+            in_scope = await UsuarioRepository.get(db_session, owner_id) is not None
+        else:
+            in_scope = owner_id == scope.user_id
+        if not in_scope:
+            raise _invalid("user_id", "El usuario no existe.")
+        return owner_id
 
     @staticmethod
     async def _ensure_slug_available(db_session: AsyncSession, slug: str) -> None:

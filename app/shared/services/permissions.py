@@ -21,7 +21,7 @@ ROLE_PERMISSIONS: dict[Role, dict[Module, frozenset[Action]]] = {
         Module.PLAN: frozenset({Action.READ, Action.UPDATE, Action.AUDIT}),  # filas fijas: no se crean ni se eliminan
         Module.USUARIO: frozenset({Action.CREATE, Action.READ, Action.UPDATE, Action.DELETE, Action.AUDIT}),
         Module.PAGO: frozenset({Action.CREATE, Action.READ, Action.DELETE, Action.AUDIT}),  # kardex: no se edita; DELETE = anular
-        Module.TARJETA: frozenset({Action.READ, Action.UPDATE, Action.DELETE, Action.AUDIT}),  # la tarjeta la crea su dueño
+        Module.TARJETA: frozenset({Action.CREATE, Action.READ, Action.UPDATE, Action.DELETE, Action.AUDIT}),
         Module.TARJETA_THEME: frozenset({Action.READ, Action.UPDATE, Action.AUDIT}),  # se crea y elimina con la tarjeta
         Module.TARJETA_SEO: frozenset({Action.READ, Action.UPDATE, Action.AUDIT}),  # se crea y elimina con la tarjeta
         Module.TARJETA_SECCION: frozenset({Action.AUDIT}),  # se edita desde la tarjeta
@@ -43,7 +43,7 @@ ROLE_PERMISSIONS: dict[Role, dict[Module, frozenset[Action]]] = {
         # La jerarquía (can_manage_role) limita la gestión a usuarios de rol inferior.
         Module.USUARIO: frozenset({Action.CREATE, Action.READ, Action.UPDATE, Action.DELETE, Action.AUDIT}),
         Module.PAGO: frozenset({Action.CREATE, Action.READ, Action.DELETE, Action.AUDIT}),  # kardex: no se edita; DELETE = anular
-        Module.TARJETA: frozenset({Action.READ, Action.UPDATE, Action.DELETE, Action.AUDIT}),  # la tarjeta la crea su dueño
+        Module.TARJETA: frozenset({Action.CREATE, Action.READ, Action.UPDATE, Action.DELETE, Action.AUDIT}),
         Module.TARJETA_THEME: frozenset({Action.READ, Action.UPDATE, Action.AUDIT}),  # se crea y elimina con la tarjeta
         Module.TARJETA_SEO: frozenset({Action.READ, Action.UPDATE, Action.AUDIT}),  # se crea y elimina con la tarjeta
         Module.TARJETA_SECCION: frozenset({Action.AUDIT}),  # se edita desde la tarjeta

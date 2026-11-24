@@ -91,9 +91,30 @@ async def test_una_tarjeta_por_usuario_y_slug_unico_responden_409(client, db_ses
     assert response.json()["details"] == {"slug": "Ya está en uso."}
 
 
-async def test_los_admins_no_crean_tarjetas(client, admin, superadmin):
-    for actor in (admin, superadmin):
-        assert (await client.post(f"{BASE}/", json=_tarjeta(), headers=auth_header(actor))).status_code == 403
+async def test_un_usuario_solo_crea_su_propia_tarjeta(client, db_session, user):
+    otro = await create_usuario(db_session, "otro@test.example.com")
+    response = await client.post(f"{BASE}/", json=_tarjeta(user_id=str(otro.id)), headers=auth_header(user))
+    assert response.status_code == 422
+    assert response.json()["details"] == {"user_id": "El usuario no existe."}  # sin revelar que existe
+
+    tarjeta = await _crear(client, user, user_id=str(user.id))
+    assert tarjeta["user_id"] == str(user.id)
+
+
+async def test_los_admins_crean_la_tarjeta_de_otro_usuario(client, db_session, admin, superadmin, user):
+    tarjeta = await _crear(client, admin, user_id=str(user.id))
+    assert tarjeta["user_id"] == str(user.id)
+    audit = (await client.get(f"{BASE}/{tarjeta['id']}/audit", headers=auth_header(admin))).json()
+    assert audit["created_by"] == str(admin.id)
+
+    # Una por usuario, aunque la cree otro admin.
+    response = await client.post(f"{BASE}/", json=_tarjeta(user_id=str(user.id)), headers=auth_header(superadmin))
+    assert response.status_code == 409
+    assert response.json()["message"] == "El usuario ya tiene una tarjeta."
+
+    response = await client.post(f"{BASE}/", json=_tarjeta(user_id=str(uuid4())), headers=auth_header(superadmin))
+    assert response.status_code == 422
+    assert response.json()["details"] == {"user_id": "El usuario no existe."}
 
 
 async def test_datos_invalidos_responden_422(client, user):
@@ -101,7 +122,7 @@ async def test_datos_invalidos_responden_422(client, user):
         _tarjeta(slug="Con Espacios"),
         _tarjeta(slug="ab"),
         _tarjeta(is_public=True),  # publicar es una acción
-        _tarjeta(user_id=str(uuid4())),  # el dueño sale del actor
+        _tarjeta(user_id=str(uuid4())),  # un usuario solo crea la suya
         _tarjeta(nombres="Ana123"),
         _tarjeta(cargo=""),
         _tarjeta(nombre_empresa_posicion="centro"),
