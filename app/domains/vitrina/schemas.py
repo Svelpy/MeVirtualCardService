@@ -6,11 +6,11 @@ from typing import Self
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from app.domains.vitrina_categoria.schemas import (
-    VITRINA_CATEGORIA_CREATE_EXAMPLE,
-    VITRINA_CATEGORIA_ID,
+    VITRINA_CATEGORIA_CREATE_EXAMPLES,
+    VITRINA_CATEGORIA_NESTED_EXAMPLES,
     VITRINA_CATEGORIA_MAX,
-    VITRINA_CATEGORIA_PUBLIC_EXAMPLE,
-    VITRINA_CATEGORIA_RESPONSE_EXAMPLE,
+    VITRINA_CATEGORIA_PUBLIC_EXAMPLES,
+    VITRINA_CATEGORIA_RESPONSE_EXAMPLES,
     VitrinaCategoriaCreate,
     VitrinaCategoriaNestedItem,
     VitrinaCategoriaPublic,
@@ -18,16 +18,18 @@ from app.domains.vitrina_categoria.schemas import (
     ensure_unique_nombre,
 )
 from app.domains.vitrina_item.schemas import (
-    VITRINA_ITEM_CREATE_NESTED_EXAMPLE,
+    VITRINA_ITEM_CREATE_NESTED_EXAMPLES,
     VITRINA_ITEM_MAX,
-    VITRINA_ITEM_PUBLIC_EXAMPLE,
-    VITRINA_ITEM_RESPONSE_DETAIL_EXAMPLE,
+    VITRINA_ITEM_NESTED_EXAMPLES,
+    VITRINA_ITEM_PUBLIC_EXAMPLES,
+    VITRINA_ITEM_RESPONSE_DETAIL_EXAMPLES,
     VitrinaItemCreateNested,
     VitrinaItemNestedItem,
     VitrinaItemPublic,
     VitrinaItemResponseDetail,
 )
 from app.shared.schemas.base import AUDIT_EXAMPLE, AuditMixin, SchemaBase, reject_null
+from app.shared.schemas.examples import without
 from app.shared.services.validators import (
     validator_boolean,
     validator_currency_code,
@@ -53,8 +55,8 @@ VITRINA_RESPONSE_EXAMPLE = {
 }
 VITRINA_PUBLIC_EXAMPLE = {
     **_CAMPOS_EXAMPLE,
-    "categorias": [VITRINA_CATEGORIA_PUBLIC_EXAMPLE],
-    "items": [VITRINA_ITEM_PUBLIC_EXAMPLE],
+    "categorias": VITRINA_CATEGORIA_PUBLIC_EXAMPLES,
+    "items": VITRINA_ITEM_PUBLIC_EXAMPLES,
 }
 
 _CAMPO_NOMBRE_FIELDS = ("campo1_nombre", "campo2_nombre", "campo3_nombre", "campo4_nombre")
@@ -168,8 +170,9 @@ class VitrinaPublic(SchemaBase):
 
 VITRINA_CREATE_NESTED_EXAMPLE = {
     **VITRINA_CREATE_EXAMPLE,
-    "categorias": [VITRINA_CATEGORIA_CREATE_EXAMPLE],
-    "items": [{**VITRINA_ITEM_CREATE_NESTED_EXAMPLE, "categoria_id": None}],
+    "categorias": VITRINA_CATEGORIA_CREATE_EXAMPLES,
+    # Al crear, las categorías no tienen id: los items van sin categoria_id (excepción de los ejemplos).
+    "items": without(VITRINA_ITEM_CREATE_NESTED_EXAMPLES, "categoria_id"),
 }
 
 
@@ -227,23 +230,22 @@ class VitrinaUpdateNested(VitrinaUpdate):
         json_schema_extra={
             "example": {
                 **_CAMPOS_EXAMPLE,
-                "categorias": [{**VITRINA_CATEGORIA_CREATE_EXAMPLE, "id": VITRINA_CATEGORIA_ID}],
-                "items": [{**VITRINA_ITEM_CREATE_NESTED_EXAMPLE, "id": VITRINA_ITEM_RESPONSE_DETAIL_EXAMPLE["id"]}],
+                "categorias": VITRINA_CATEGORIA_NESTED_EXAMPLES,
+                "items": VITRINA_ITEM_NESTED_EXAMPLES,
             }
         }
     )
+
+
+VITRINA_RESPONSE_DETAIL_EXAMPLE = {
+    **VITRINA_RESPONSE_EXAMPLE,
+    "categorias": VITRINA_CATEGORIA_RESPONSE_EXAMPLES,
+    "items": VITRINA_ITEM_RESPONSE_DETAIL_EXAMPLES,
+}
 
 
 class VitrinaResponseDetail(VitrinaResponse):
     categorias: list[VitrinaCategoriaResponse]
     items: list[VitrinaItemResponseDetail]
 
-    model_config = ConfigDict(
-        json_schema_extra={
-            "example": {
-                **VITRINA_RESPONSE_EXAMPLE,
-                "categorias": [VITRINA_CATEGORIA_RESPONSE_EXAMPLE],
-                "items": [VITRINA_ITEM_RESPONSE_DETAIL_EXAMPLE],
-            }
-        }
-    )
+    model_config = ConfigDict(json_schema_extra={"example": VITRINA_RESPONSE_DETAIL_EXAMPLE})

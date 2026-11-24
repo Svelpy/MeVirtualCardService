@@ -1,23 +1,27 @@
 from datetime import datetime
+from typing import ClassVar
 from uuid import UUID
 
 from pydantic import ConfigDict, Field, field_validator
 
+from app.domains.plan.schemas import PLAN_RESPONSE_EXAMPLE
 from app.domains.tarjeta_certificacion.schemas import (
-    TARJETA_CERTIFICACION_CREATE_EXAMPLE,
+    TARJETA_CERTIFICACION_CREATE_EXAMPLES,
     TARJETA_CERTIFICACION_MAX,
-    TARJETA_CERTIFICACION_PUBLIC_EXAMPLE,
-    TARJETA_CERTIFICACION_RESPONSE_EXAMPLE,
+    TARJETA_CERTIFICACION_NESTED_EXAMPLES,
+    TARJETA_CERTIFICACION_PUBLIC_EXAMPLES,
+    TARJETA_CERTIFICACION_RESPONSE_EXAMPLES,
     TarjetaCertificacionCreate,
     TarjetaCertificacionNestedItem,
     TarjetaCertificacionPublic,
     TarjetaCertificacionResponse,
 )
 from app.domains.tarjeta_contacto.schemas import (
-    TARJETA_CONTACTO_CREATE_EXAMPLE,
+    TARJETA_CONTACTO_CREATE_EXAMPLES,
     TARJETA_CONTACTO_MAX,
-    TARJETA_CONTACTO_PUBLIC_EXAMPLE,
-    TARJETA_CONTACTO_RESPONSE_EXAMPLE,
+    TARJETA_CONTACTO_NESTED_EXAMPLES,
+    TARJETA_CONTACTO_PUBLIC_EXAMPLES,
+    TARJETA_CONTACTO_RESPONSE_EXAMPLES,
     TarjetaContactoCreate,
     TarjetaContactoNestedItem,
     TarjetaContactoPublic,
@@ -25,20 +29,22 @@ from app.domains.tarjeta_contacto.schemas import (
     ensure_one_primary_per_tipo,
 )
 from app.domains.tarjeta_educacion.schemas import (
-    TARJETA_EDUCACION_CREATE_EXAMPLE,
+    TARJETA_EDUCACION_CREATE_EXAMPLES,
     TARJETA_EDUCACION_MAX,
-    TARJETA_EDUCACION_PUBLIC_EXAMPLE,
-    TARJETA_EDUCACION_RESPONSE_EXAMPLE,
+    TARJETA_EDUCACION_NESTED_EXAMPLES,
+    TARJETA_EDUCACION_PUBLIC_EXAMPLES,
+    TARJETA_EDUCACION_RESPONSE_EXAMPLES,
     TarjetaEducacionCreate,
     TarjetaEducacionNestedItem,
     TarjetaEducacionPublic,
     TarjetaEducacionResponse,
 )
 from app.domains.tarjeta_faq.schemas import (
-    TARJETA_FAQ_CREATE_EXAMPLE,
+    TARJETA_FAQ_CREATE_EXAMPLES,
     TARJETA_FAQ_MAX,
-    TARJETA_FAQ_PUBLIC_EXAMPLE,
-    TARJETA_FAQ_RESPONSE_EXAMPLE,
+    TARJETA_FAQ_NESTED_EXAMPLES,
+    TARJETA_FAQ_PUBLIC_EXAMPLES,
+    TARJETA_FAQ_RESPONSE_EXAMPLES,
     TarjetaFaqCreate,
     TarjetaFaqNestedItem,
     TarjetaFaqPublic,
@@ -46,19 +52,26 @@ from app.domains.tarjeta_faq.schemas import (
 )
 from app.domains.tarjeta_seccion.schemas import (
     TARJETA_SECCION_COUNT,
-    TARJETA_SECCION_CREATE_EXAMPLE,
-    TARJETA_SECCION_PUBLIC_EXAMPLE,
-    TARJETA_SECCION_RESPONSE_EXAMPLE,
+    TARJETA_SECCION_NESTED_EXAMPLES,
+    TARJETA_SECCION_PUBLIC_EXAMPLES,
+    TARJETA_SECCION_RESPONSE_EXAMPLES,
     TarjetaSeccionNestedItem,
     TarjetaSeccionPublic,
     TarjetaSeccionResponse,
 )
-from app.domains.tarjeta_seo.schemas import TARJETA_SEO_PUBLIC_EXAMPLE, TarjetaSeoCreate, TarjetaSeoPublic
+from app.domains.tarjeta_seo.schemas import (
+    TARJETA_SEO_PUBLIC_EXAMPLE,
+    TARJETA_SEO_RESPONSE_EXAMPLE,
+    TarjetaSeoCreate,
+    TarjetaSeoPublic,
+    TarjetaSeoResponse,
+)
 from app.domains.tarjeta_social.schemas import (
-    TARJETA_SOCIAL_CREATE_EXAMPLE,
+    TARJETA_SOCIAL_CREATE_EXAMPLES,
     TARJETA_SOCIAL_MAX,
-    TARJETA_SOCIAL_PUBLIC_EXAMPLE,
-    TARJETA_SOCIAL_RESPONSE_EXAMPLE,
+    TARJETA_SOCIAL_NESTED_EXAMPLES,
+    TARJETA_SOCIAL_PUBLIC_EXAMPLES,
+    TARJETA_SOCIAL_RESPONSE_EXAMPLES,
     TarjetaSocialCreate,
     TarjetaSocialNestedItem,
     TarjetaSocialPublic,
@@ -68,16 +81,17 @@ from app.domains.tarjeta_social.schemas import (
 from app.domains.tarjeta_theme.schemas import (
     TARJETA_THEME_CREATE_EXAMPLE,
     TARJETA_THEME_PUBLIC_EXAMPLE,
+    TARJETA_THEME_RESPONSE_EXAMPLE,
     TarjetaThemeCreate,
     TarjetaThemePublic,
+    TarjetaThemeResponse,
 )
 from app.domains.tarjeta_ubicacion.schemas import (
-    TARJETA_UBICACION_CREATE_EXAMPLE,
-    TARJETA_UBICACION_CREATE_NESTED_EXAMPLE,
+    TARJETA_UBICACION_CREATE_NESTED_EXAMPLES,
     TARJETA_UBICACION_MAX,
-    TARJETA_UBICACION_PUBLIC_EXAMPLE,
-    TARJETA_UBICACION_RESPONSE_DETAIL_EXAMPLE,
-    TARJETA_UBICACION_RESPONSE_EXAMPLE,
+    TARJETA_UBICACION_NESTED_EXAMPLES,
+    TARJETA_UBICACION_PUBLIC_EXAMPLES,
+    TARJETA_UBICACION_RESPONSE_DETAIL_EXAMPLES,
     TarjetaUbicacionCreateNested,
     TarjetaUbicacionNestedItem,
     TarjetaUbicacionPublic,
@@ -85,15 +99,19 @@ from app.domains.tarjeta_ubicacion.schemas import (
 )
 from app.domains.usuario.schemas import (
     USUARIO_REF_EXAMPLE,
+    USUARIO_REF_EXAMPLES,
     USUARIO_RESPONSE_EXAMPLE,
     UsuarioRef,
     UsuarioResponse,
+    UsuarioResponseDetail,
 )
 from app.domains.vitrina.schemas import (
     VITRINA_CREATE_NESTED_EXAMPLE,
     VITRINA_PUBLIC_EXAMPLE,
+    VITRINA_RESPONSE_DETAIL_EXAMPLE,
     VitrinaCreateNested,
     VitrinaPublic,
+    VitrinaResponseDetail,
 )
 from app.shared.enums import PosicionNombreEmpresa
 from app.shared.schemas.base import AUDIT_EXAMPLE, AuditMixin, SchemaBase, reject_null
@@ -317,13 +335,13 @@ class TarjetaPublic(SchemaBase):
                 **_CAMPOS_EXAMPLE,
                 "theme": TARJETA_THEME_PUBLIC_EXAMPLE,
                 "seo": TARJETA_SEO_PUBLIC_EXAMPLE,
-                "secciones": [TARJETA_SECCION_PUBLIC_EXAMPLE],
-                "contactos": [TARJETA_CONTACTO_PUBLIC_EXAMPLE],
-                "ubicaciones": [TARJETA_UBICACION_PUBLIC_EXAMPLE],
-                "redes": [TARJETA_SOCIAL_PUBLIC_EXAMPLE],
-                "educaciones": [TARJETA_EDUCACION_PUBLIC_EXAMPLE],
-                "certificaciones": [TARJETA_CERTIFICACION_PUBLIC_EXAMPLE],
-                "faqs": [TARJETA_FAQ_PUBLIC_EXAMPLE],
+                "secciones": TARJETA_SECCION_PUBLIC_EXAMPLES,
+                "contactos": TARJETA_CONTACTO_PUBLIC_EXAMPLES,
+                "ubicaciones": TARJETA_UBICACION_PUBLIC_EXAMPLES,
+                "redes": TARJETA_SOCIAL_PUBLIC_EXAMPLES,
+                "educaciones": TARJETA_EDUCACION_PUBLIC_EXAMPLES,
+                "certificaciones": TARJETA_CERTIFICACION_PUBLIC_EXAMPLES,
+                "faqs": TARJETA_FAQ_PUBLIC_EXAMPLES,
                 "vitrina": VITRINA_PUBLIC_EXAMPLE,
             }
         }
@@ -341,19 +359,6 @@ class TarjetasDespublicadasResponse(SchemaBase):
 # =================================
 # Ronda 2: schemas con relaciones
 # =================================
-
-# Las 8 secciones fijas, con sus ids, para el ejemplo del UpdateNested.
-_SECCIONES_NESTED_EXAMPLE = [
-    {**TARJETA_SECCION_CREATE_EXAMPLE, "titulo": titulo, "orden": orden, "id": f"45c48cce-2e2d-4fbd-aa1a-9b8c7d6e5f4{orden}"}
-    for orden, titulo in enumerate(
-        ("Sobre mí", "Contacto", "Servicios", "Ubicación", "Redes", "Formación", "Certificaciones", "Preguntas frecuentes")
-    )
-]
-
-
-def _with_id(example: dict, item_id: str) -> dict:
-    return {**example, "id": item_id}
-
 
 class TarjetaCreateNested(TarjetaCreate):
     """
@@ -394,12 +399,12 @@ class TarjetaCreateNested(TarjetaCreate):
                 "theme": TARJETA_THEME_CREATE_EXAMPLE,
                 "seo": TARJETA_SEO_PUBLIC_EXAMPLE,
                 "vitrina": VITRINA_CREATE_NESTED_EXAMPLE,
-                "contactos": [TARJETA_CONTACTO_CREATE_EXAMPLE],
-                "ubicaciones": [TARJETA_UBICACION_CREATE_NESTED_EXAMPLE],
-                "redes": [TARJETA_SOCIAL_CREATE_EXAMPLE],
-                "educaciones": [TARJETA_EDUCACION_CREATE_EXAMPLE],
-                "certificaciones": [TARJETA_CERTIFICACION_CREATE_EXAMPLE],
-                "faqs": [TARJETA_FAQ_CREATE_EXAMPLE],
+                "contactos": TARJETA_CONTACTO_CREATE_EXAMPLES,
+                "ubicaciones": TARJETA_UBICACION_CREATE_NESTED_EXAMPLES,
+                "redes": TARJETA_SOCIAL_CREATE_EXAMPLES,
+                "educaciones": TARJETA_EDUCACION_CREATE_EXAMPLES,
+                "certificaciones": TARJETA_CERTIFICACION_CREATE_EXAMPLES,
+                "faqs": TARJETA_FAQ_CREATE_EXAMPLES,
             }
         }
     )
@@ -450,24 +455,13 @@ class TarjetaUpdateNested(TarjetaUpdate):
         json_schema_extra={
             "example": {
                 **TARJETA_CREATE_EXAMPLE,
-                "secciones": _SECCIONES_NESTED_EXAMPLE,
-                "contactos": [_with_id(TARJETA_CONTACTO_CREATE_EXAMPLE, TARJETA_CONTACTO_RESPONSE_EXAMPLE["id"])],
-                "ubicaciones": [
-                    {
-                        **TARJETA_UBICACION_CREATE_EXAMPLE,
-                        "horarios": [
-                            _with_id(horario, TARJETA_UBICACION_RESPONSE_DETAIL_EXAMPLE["horarios"][0]["id"])
-                            for horario in TARJETA_UBICACION_CREATE_NESTED_EXAMPLE["horarios"]
-                        ],
-                        "id": TARJETA_UBICACION_RESPONSE_EXAMPLE["id"],
-                    }
-                ],
-                "redes": [_with_id(TARJETA_SOCIAL_CREATE_EXAMPLE, TARJETA_SOCIAL_RESPONSE_EXAMPLE["id"])],
-                "educaciones": [_with_id(TARJETA_EDUCACION_CREATE_EXAMPLE, TARJETA_EDUCACION_RESPONSE_EXAMPLE["id"])],
-                "certificaciones": [
-                    _with_id(TARJETA_CERTIFICACION_CREATE_EXAMPLE, TARJETA_CERTIFICACION_RESPONSE_EXAMPLE["id"])
-                ],
-                "faqs": [_with_id(TARJETA_FAQ_CREATE_EXAMPLE, TARJETA_FAQ_RESPONSE_EXAMPLE["id"])],
+                "secciones": TARJETA_SECCION_NESTED_EXAMPLES,
+                "contactos": TARJETA_CONTACTO_NESTED_EXAMPLES,
+                "ubicaciones": TARJETA_UBICACION_NESTED_EXAMPLES,
+                "redes": TARJETA_SOCIAL_NESTED_EXAMPLES,
+                "educaciones": TARJETA_EDUCACION_NESTED_EXAMPLES,
+                "certificaciones": TARJETA_CERTIFICACION_NESTED_EXAMPLES,
+                "faqs": TARJETA_FAQ_NESTED_EXAMPLES,
             }
         }
     )
@@ -475,6 +469,60 @@ class TarjetaUpdateNested(TarjetaUpdate):
 
 class TarjetaResponseItemList(TarjetaResponse):
     user: UsuarioRef
+
+    # Ejemplo de GET /tarjetas: una tarjeta por cada usuario de ejemplo.
+    PAGE_EXAMPLES: ClassVar[list[dict]] = [
+        {**TARJETA_RESPONSE_EXAMPLE, "user": USUARIO_REF_EXAMPLES[0]},
+        {
+            **TARJETA_RESPONSE_EXAMPLE,
+            "id": "3f1c2a9e-8b7d-4c6e-9a1b-2c3d4e5f6a7c",
+            "user_id": USUARIO_REF_EXAMPLES[1]["id"],
+            "slug": "estudio-mamani-abogados",
+            "rubro": "Derecho laboral",
+            "prefijo": "Abg.",
+            "nombres": "Luis Fernando",
+            "apellidos": "Mamani Condori",
+            "cargo": "Socio fundador",
+            "nombre_empresa": "Estudio Mamani & Asociados",
+            "acerca_de_mi": "Asesoría laboral para empresas y trabajadores desde 2010.",
+            "profile_url": "https://res.cloudinary.com/demo/image/upload/v1/perfil-luis.jpg",
+            "photo_usuario_url": "https://res.cloudinary.com/demo/image/upload/v1/foto-luis.jpg",
+            "logo_empresa_url": "https://res.cloudinary.com/demo/image/upload/v1/logo-estudio.png",
+            "nombre_empresa_posicion": "abajo",
+            "cover_url": "https://res.cloudinary.com/demo/image/upload/v1/portada-estudio.jpg",
+            "qr_pago_url": "https://res.cloudinary.com/demo/image/upload/v1/qr-estudio.png",
+            "is_public": True,
+            "published_at": "2026-01-12T09:00:00Z",
+            "created_at": "2026-01-10T12:30:00Z",
+            "updated_at": "2026-01-12T09:00:00Z",
+            "user": USUARIO_REF_EXAMPLES[1],
+        },
+        {
+            **TARJETA_RESPONSE_EXAMPLE,
+            "id": "3f1c2a9e-8b7d-4c6e-9a1b-2c3d4e5f6a7d",
+            "user_id": USUARIO_REF_EXAMPLES[2]["id"],
+            "slug": "carla-rojas-disenio",
+            "rubro": "Diseño gráfico",
+            "prefijo": "Lic.",
+            "nombres": "Carla",
+            "apellidos": "Rojas Vargas",
+            "cargo": "Diseñadora de marca",
+            "nombre_empresa": "Estudio Kantuta",
+            "acerca_de_mi": "Identidad visual para emprendimientos bolivianos.",
+            "profile_url": "https://res.cloudinary.com/demo/image/upload/v1/perfil-carla.jpg",
+            "photo_usuario_url": "https://res.cloudinary.com/demo/image/upload/v1/foto-carla.jpg",
+            "logo_empresa_url": "https://res.cloudinary.com/demo/image/upload/v1/logo-kantuta.png",
+            "nombre_empresa_posicion": "izquierda",
+            "cover_url": "https://res.cloudinary.com/demo/image/upload/v1/portada-kantuta.jpg",
+            "qr_pago_url": "https://res.cloudinary.com/demo/image/upload/v1/qr-kantuta.png",
+            # Despublicada al vencer su plan: conserva la fecha de su última publicación.
+            "is_public": False,
+            "published_at": "2026-02-01T10:00:00Z",
+            "created_at": "2026-01-31T09:40:00Z",
+            "updated_at": "2026-02-08T00:00:00Z",
+            "user": USUARIO_REF_EXAMPLES[2],
+        },
+    ]
 
     model_config = ConfigDict(json_schema_extra={"example": {**TARJETA_RESPONSE_EXAMPLE, "user": USUARIO_REF_EXAMPLE}})
 
@@ -496,13 +544,75 @@ class TarjetaResponseDetail(TarjetaResponse):
             "example": {
                 **TARJETA_RESPONSE_EXAMPLE,
                 "user": USUARIO_RESPONSE_EXAMPLE,
-                "secciones": [TARJETA_SECCION_RESPONSE_EXAMPLE],
-                "contactos": [TARJETA_CONTACTO_RESPONSE_EXAMPLE],
-                "ubicaciones": [TARJETA_UBICACION_RESPONSE_DETAIL_EXAMPLE],
-                "redes": [TARJETA_SOCIAL_RESPONSE_EXAMPLE],
-                "educaciones": [TARJETA_EDUCACION_RESPONSE_EXAMPLE],
-                "certificaciones": [TARJETA_CERTIFICACION_RESPONSE_EXAMPLE],
-                "faqs": [TARJETA_FAQ_RESPONSE_EXAMPLE],
+                "secciones": TARJETA_SECCION_RESPONSE_EXAMPLES,
+                "contactos": TARJETA_CONTACTO_RESPONSE_EXAMPLES,
+                "ubicaciones": TARJETA_UBICACION_RESPONSE_DETAIL_EXAMPLES,
+                "redes": TARJETA_SOCIAL_RESPONSE_EXAMPLES,
+                "educaciones": TARJETA_EDUCACION_RESPONSE_EXAMPLES,
+                "certificaciones": TARJETA_CERTIFICACION_RESPONSE_EXAMPLES,
+                "faqs": TARJETA_FAQ_RESPONSE_EXAMPLES,
             }
+        }
+    )
+
+
+# =================================
+# Vista del dueño (GET /usuarios/me)
+# =================================
+
+TARJETA_RESPONSE_ME_EXAMPLE = {
+    **TARJETA_RESPONSE_EXAMPLE,
+    "theme": TARJETA_THEME_RESPONSE_EXAMPLE,
+    "seo": TARJETA_SEO_RESPONSE_EXAMPLE,
+    "secciones": TARJETA_SECCION_RESPONSE_EXAMPLES,
+    "contactos": TARJETA_CONTACTO_RESPONSE_EXAMPLES,
+    "ubicaciones": TARJETA_UBICACION_RESPONSE_DETAIL_EXAMPLES,
+    "redes": TARJETA_SOCIAL_RESPONSE_EXAMPLES,
+    "educaciones": TARJETA_EDUCACION_RESPONSE_EXAMPLES,
+    "certificaciones": TARJETA_CERTIFICACION_RESPONSE_EXAMPLES,
+    "faqs": TARJETA_FAQ_RESPONSE_EXAMPLES,
+    "vitrina": VITRINA_RESPONSE_DETAIL_EXAMPLE,
+}
+
+
+class TarjetaResponseMe(TarjetaResponse):
+    """
+    La tarjeta completa, tal como la ve su dueño: el mismo árbol que la lectura
+    pública por slug, pero con todas las filas (visibles y ocultas), sin quitar
+    precios y con is_visible, orden y fechas, para que decida qué editar.
+
+    Excepción a §17: theme, seo y vitrina son Extensiones 1:1 con rutas propias,
+    pero aquí se embeben para entregar la tarjeta en una sola llamada. Se editan
+    igual que siempre, cada una en su ruta.
+    """
+
+    theme: TarjetaThemeResponse
+    seo: TarjetaSeoResponse
+    secciones: list[TarjetaSeccionResponse]
+    contactos: list[TarjetaContactoResponse]
+    ubicaciones: list[TarjetaUbicacionResponseDetail]
+    redes: list[TarjetaSocialResponse]
+    educaciones: list[TarjetaEducacionResponse]
+    certificaciones: list[TarjetaCertificacionResponse]
+    faqs: list[TarjetaFaqResponse]
+    vitrina: VitrinaResponseDetail
+
+    model_config = ConfigDict(json_schema_extra={"example": TARJETA_RESPONSE_ME_EXAMPLE})
+
+
+# Vive aquí y no en usuario/schemas.py porque este módulo ya importa usuario/schemas:
+# definirlo allá crearía un import circular entre los dos dominios.
+class UsuarioResponseMe(UsuarioResponseDetail):
+    """
+    GET /usuarios/me: el usuario, su plan y su tarjeta completa (null si todavía
+    no la creó). Excepción a §20: la tarjeta apunta al usuario ("me apuntan")
+    y aun así se embebe, porque es una por usuario y el /me la entrega entera.
+    """
+
+    tarjeta: TarjetaResponseMe | None
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {**USUARIO_RESPONSE_EXAMPLE, "plan": PLAN_RESPONSE_EXAMPLE, "tarjeta": TARJETA_RESPONSE_ME_EXAMPLE}
         }
     )

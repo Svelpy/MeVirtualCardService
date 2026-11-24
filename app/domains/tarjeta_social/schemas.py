@@ -6,6 +6,12 @@ from pydantic import ConfigDict, Field, field_validator
 
 from app.shared.enums import RedSocial
 from app.shared.schemas.base import AUDIT_EXAMPLE, SMALLINT_MAX, AuditMixin, SchemaBase
+from app.shared.schemas.examples import (
+    TARJETA_ID_EXAMPLE,
+    nested_examples,
+    pick,
+    response_examples,
+)
 from app.shared.services.validators import (
     validator_boolean,
     validator_https_url,
@@ -14,28 +20,43 @@ from app.shared.services.validators import (
 )
 
 
-_ID = "c20ad4d7-6fe9-4759-8aa2-7f1e2d3c4b5a"
+_IDS = (
+    "c20ad4d7-6fe9-4759-8aa2-7f1e2d3c4b5a",
+    "c20ad4d7-6fe9-4759-8aa2-7f1e2d3c4b5b",
+    "c20ad4d7-6fe9-4759-8aa2-7f1e2d3c4b5c",
+)
+_ID = _IDS[0]
 
-TARJETA_SOCIAL_CREATE_EXAMPLE = {
-    "red": "instagram",
-    "url": "https://www.instagram.com/dra.ana.perez",
-    "username": "dra.ana.perez",
-    "is_visible": True,
-    "orden": 0,
-}
-TARJETA_SOCIAL_RESPONSE_EXAMPLE = {
-    "id": _ID,
-    "tarjeta_id": "3f1c2a9e-8b7d-4c6e-9a1b-2c3d4e5f6a7b",
-    **TARJETA_SOCIAL_CREATE_EXAMPLE,
-    "created_at": "2026-01-15T14:30:00Z",
-    "updated_at": "2026-02-01T09:00:00Z",
-}
-TARJETA_SOCIAL_PUBLIC_EXAMPLE = {
-    "id": _ID,
-    "red": "instagram",
-    "url": "https://www.instagram.com/dra.ana.perez",
-    "username": "dra.ana.perez",
-}
+TARJETA_SOCIAL_CREATE_EXAMPLES = [
+    {
+        "red": "instagram",
+        "url": "https://www.instagram.com/dra.ana.perez",
+        "username": "dra.ana.perez",
+        "is_visible": True,
+        "orden": 0,
+    },
+    {
+        "red": "facebook",
+        "url": "https://www.facebook.com/dra.ana.perez.pediatra",
+        "username": "dra.ana.perez.pediatra",
+        "is_visible": True,
+        "orden": 1,
+    },
+    {
+        "red": "linkedin",
+        "url": "https://www.linkedin.com/in/ana-perez-pediatra",
+        "username": "ana-perez-pediatra",
+        "is_visible": False,
+        "orden": 2,
+    },
+]
+TARJETA_SOCIAL_RESPONSE_EXAMPLES = response_examples(TARJETA_SOCIAL_CREATE_EXAMPLES, _IDS, tarjeta_id=TARJETA_ID_EXAMPLE)
+TARJETA_SOCIAL_PUBLIC_EXAMPLES = pick(TARJETA_SOCIAL_RESPONSE_EXAMPLES, "id", "red", "url", "username")
+TARJETA_SOCIAL_NESTED_EXAMPLES = nested_examples(TARJETA_SOCIAL_CREATE_EXAMPLES, _IDS)
+
+TARJETA_SOCIAL_CREATE_EXAMPLE = TARJETA_SOCIAL_CREATE_EXAMPLES[0]
+TARJETA_SOCIAL_RESPONSE_EXAMPLE = TARJETA_SOCIAL_RESPONSE_EXAMPLES[0]
+TARJETA_SOCIAL_PUBLIC_EXAMPLE = TARJETA_SOCIAL_PUBLIC_EXAMPLES[0]
 
 # Una por red: el máximo de la lista es la cantidad de redes.
 TARJETA_SOCIAL_MAX = len(RedSocial)

@@ -5,6 +5,12 @@ from uuid import UUID
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from app.shared.schemas.base import AUDIT_EXAMPLE, SMALLINT_MAX, AuditMixin, SchemaBase
+from app.shared.schemas.examples import (
+    TARJETA_ID_EXAMPLE,
+    nested_examples,
+    pick,
+    response_examples,
+)
 from app.shared.services.validators import (
     validator_boolean,
     validator_date,
@@ -13,36 +19,68 @@ from app.shared.services.validators import (
 )
 
 
-_ID = "aab32389-22bc-4c56-8a7e-3f2e1d0c9b8a"
+_IDS = (
+    "aab32389-22bc-4c56-8a7e-3f2e1d0c9b8a",
+    "aab32389-22bc-4c56-8a7e-3f2e1d0c9b8b",
+    "aab32389-22bc-4c56-8a7e-3f2e1d0c9b8c",
+)
+_ID = _IDS[0]
 
-TARJETA_EDUCACION_CREATE_EXAMPLE = {
-    "institucion": "Universidad Mayor de San Andrés",
-    "titulo": "Licenciatura en Medicina",
-    "area_estudio": "Medicina",
-    "descripcion": "Formación general con internado rotatorio.",
-    "fecha_inicio": "2012-02-01",
-    "fecha_fin": "2018-12-15",
-    "is_actual": False,
-    "is_visible": True,
-    "orden": 0,
-}
-TARJETA_EDUCACION_RESPONSE_EXAMPLE = {
-    "id": _ID,
-    "tarjeta_id": "3f1c2a9e-8b7d-4c6e-9a1b-2c3d4e5f6a7b",
-    **TARJETA_EDUCACION_CREATE_EXAMPLE,
-    "created_at": "2026-01-15T14:30:00Z",
-    "updated_at": "2026-02-01T09:00:00Z",
-}
-TARJETA_EDUCACION_PUBLIC_EXAMPLE = {
-    "id": _ID,
-    "institucion": "Universidad Mayor de San Andrés",
-    "titulo": "Licenciatura en Medicina",
-    "area_estudio": "Medicina",
-    "descripcion": "Formación general con internado rotatorio.",
-    "fecha_inicio": "2012-02-01",
-    "fecha_fin": "2018-12-15",
-    "is_actual": False,
-}
+# is_actual true exige fecha_fin null: los ejemplos muestran estudios terminados.
+TARJETA_EDUCACION_CREATE_EXAMPLES = [
+    {
+        "institucion": "Universidad Mayor de San Andrés",
+        "titulo": "Licenciatura en Medicina",
+        "area_estudio": "Medicina",
+        "descripcion": "Formación general con internado rotatorio.",
+        "fecha_inicio": "2012-02-01",
+        "fecha_fin": "2018-12-15",
+        "is_actual": False,
+        "is_visible": True,
+        "orden": 0,
+    },
+    {
+        "institucion": "Hospital del Niño Dr. Ovidio Aliaga Uría",
+        "titulo": "Especialidad en Pediatría",
+        "area_estudio": "Pediatría",
+        "descripcion": "Residencia de tres años en pediatría clínica.",
+        "fecha_inicio": "2019-03-01",
+        "fecha_fin": "2022-02-28",
+        "is_actual": False,
+        "is_visible": True,
+        "orden": 1,
+    },
+    {
+        "institucion": "Universidad Católica Boliviana",
+        "titulo": "Diplomado en Gestión Hospitalaria",
+        "area_estudio": "Gestión en salud",
+        "descripcion": "Programa ejecutivo de fin de semana.",
+        "fecha_inicio": "2023-08-01",
+        "fecha_fin": "2024-06-30",
+        "is_actual": False,
+        "is_visible": False,
+        "orden": 2,
+    },
+]
+TARJETA_EDUCACION_RESPONSE_EXAMPLES = response_examples(
+    TARJETA_EDUCACION_CREATE_EXAMPLES, _IDS, tarjeta_id=TARJETA_ID_EXAMPLE
+)
+TARJETA_EDUCACION_PUBLIC_EXAMPLES = pick(
+    TARJETA_EDUCACION_RESPONSE_EXAMPLES,
+    "id",
+    "institucion",
+    "titulo",
+    "area_estudio",
+    "descripcion",
+    "fecha_inicio",
+    "fecha_fin",
+    "is_actual",
+)
+TARJETA_EDUCACION_NESTED_EXAMPLES = nested_examples(TARJETA_EDUCACION_CREATE_EXAMPLES, _IDS)
+
+TARJETA_EDUCACION_CREATE_EXAMPLE = TARJETA_EDUCACION_CREATE_EXAMPLES[0]
+TARJETA_EDUCACION_RESPONSE_EXAMPLE = TARJETA_EDUCACION_RESPONSE_EXAMPLES[0]
+TARJETA_EDUCACION_PUBLIC_EXAMPLE = TARJETA_EDUCACION_PUBLIC_EXAMPLES[0]
 
 TARJETA_EDUCACION_MAX = 10
 

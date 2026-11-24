@@ -115,6 +115,32 @@ class TarjetaRepository:
         return (await db_session.execute(query)).scalars().first()
 
     @staticmethod
+    async def get_by_user(db_session: AsyncSession, user_id: UUID) -> Tarjeta | None:
+        """
+        La tarjeta no eliminada de ese dueño (una por usuario) con el árbol de
+        TarjetaResponseMe: theme, seo, vitrina y todas sus hijas no eliminadas,
+        visibles u ocultas.
+        """
+        query = (
+            select(Tarjeta)
+            .where(Tarjeta.user_id == user_id, Tarjeta.is_deleted.is_(False))
+            .options(
+                selectinload(Tarjeta.theme),
+                selectinload(Tarjeta.seo),
+                selectinload(Tarjeta.vitrina).options(
+                    selectinload(Vitrina.categorias.and_(VitrinaCategoria.is_deleted.is_(False))),
+                    selectinload(Vitrina.items.and_(VitrinaItem.is_deleted.is_(False))).options(
+                        selectinload(VitrinaItem.categoria),
+                        selectinload(VitrinaItem.imagenes.and_(VitrinaItemImagen.is_deleted.is_(False))),
+                    ),
+                ),
+                *_children(visible_only=False),
+            )
+            .execution_options(populate_existing=True)
+        )
+        return (await db_session.execute(query)).scalars().first()
+
+    @staticmethod
     async def get_public(
         db_session: AsyncSession,
         now: datetime,

@@ -4,6 +4,12 @@ from uuid import UUID
 from pydantic import ConfigDict, Field, field_validator
 
 from app.shared.schemas.base import AUDIT_EXAMPLE, SMALLINT_MAX, AuditMixin, SchemaBase
+from app.shared.schemas.examples import (
+    TARJETA_ID_EXAMPLE,
+    nested_examples,
+    pick,
+    response_examples,
+)
 from app.shared.services.validators import (
     validator_boolean,
     validator_non_empty_text,
@@ -11,26 +17,40 @@ from app.shared.services.validators import (
 )
 
 
-_ID = "6512bd43-d9ca-4a6e-8b0b-1f2e3d4c5b6a"
+_IDS = (
+    "6512bd43-d9ca-4a6e-8b0b-1f2e3d4c5b6a",
+    "6512bd43-d9ca-4a6e-8b0b-1f2e3d4c5b6b",
+    "6512bd43-d9ca-4a6e-8b0b-1f2e3d4c5b6c",
+)
+_ID = _IDS[0]
 
-TARJETA_FAQ_CREATE_EXAMPLE = {
-    "pregunta": "¿Atiende fines de semana?",
-    "respuesta": "Sí, los sábados de 9:00 a 13:00.",
-    "is_visible": True,
-    "orden": 0,
-}
-TARJETA_FAQ_RESPONSE_EXAMPLE = {
-    "id": _ID,
-    "tarjeta_id": "3f1c2a9e-8b7d-4c6e-9a1b-2c3d4e5f6a7b",
-    **TARJETA_FAQ_CREATE_EXAMPLE,
-    "created_at": "2026-01-15T14:30:00Z",
-    "updated_at": "2026-02-01T09:00:00Z",
-}
-TARJETA_FAQ_PUBLIC_EXAMPLE = {
-    "id": _ID,
-    "pregunta": "¿Atiende fines de semana?",
-    "respuesta": "Sí, los sábados de 9:00 a 13:00.",
-}
+TARJETA_FAQ_CREATE_EXAMPLES = [
+    {
+        "pregunta": "¿Atiende fines de semana?",
+        "respuesta": "Sí, los sábados de 9:00 a 13:00.",
+        "is_visible": True,
+        "orden": 0,
+    },
+    {
+        "pregunta": "¿Trabaja con seguros de salud?",
+        "respuesta": "Sí, con la Caja Nacional de Salud y los principales seguros privados.",
+        "is_visible": True,
+        "orden": 1,
+    },
+    {
+        "pregunta": "¿Hace consultas a domicilio?",
+        "respuesta": "Solo en la zona sur de La Paz, con cita previa.",
+        "is_visible": False,
+        "orden": 2,
+    },
+]
+TARJETA_FAQ_RESPONSE_EXAMPLES = response_examples(TARJETA_FAQ_CREATE_EXAMPLES, _IDS, tarjeta_id=TARJETA_ID_EXAMPLE)
+TARJETA_FAQ_PUBLIC_EXAMPLES = pick(TARJETA_FAQ_RESPONSE_EXAMPLES, "id", "pregunta", "respuesta")
+TARJETA_FAQ_NESTED_EXAMPLES = nested_examples(TARJETA_FAQ_CREATE_EXAMPLES, _IDS)
+
+TARJETA_FAQ_CREATE_EXAMPLE = TARJETA_FAQ_CREATE_EXAMPLES[0]
+TARJETA_FAQ_RESPONSE_EXAMPLE = TARJETA_FAQ_RESPONSE_EXAMPLES[0]
+TARJETA_FAQ_PUBLIC_EXAMPLE = TARJETA_FAQ_PUBLIC_EXAMPLES[0]
 
 TARJETA_FAQ_MAX = 30
 

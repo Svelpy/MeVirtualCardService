@@ -1016,12 +1016,29 @@ El ejemplo:
 - no contiene valores `null`: un campo nullable se muestra con un valor de
   ejemplo, porque el ejemplo documenta el tipo; la pestaña Schema de la
   documentación indica qué campos admiten `null`;
+- no contiene `""` ni colecciones vacías;
+- trae al menos 3 objetos distintos en cada lista, en todos los niveles
+  (`EXAMPLE_COUNT`): un solo elemento no muestra la variedad de orden, flags
+  y opcionales. Una lista fija trae todos sus elementos (las 8 secciones);
 - pasa la validación de su propio schema;
 - es coherente entre campos; por ejemplo, un `<X>ResponseAudit` con
   `deleted_at` tiene `is_deleted: true`.
 
+Única excepción: un campo que el backend rechaza en ese contexto no aparece,
+porque el ejemplo enseñaría un request inválido. Por ejemplo, al crear la
+vitrina sus items van sin `categoria_id`, porque las categorías todavía no
+tienen id. Cada excepción se declara en `EXCEPTIONS` de
+`tests/test_schemas_examples.py`.
+
+Cada hija define sus 3 variantes como `<X>_CREATE_EXAMPLES` y deriva de ellas
+`<X>_RESPONSE_EXAMPLES`, `<X>_PUBLIC_EXAMPLES` y `<X>_NESTED_EXAMPLES` con
+`shared/schemas/examples.py`; el padre embebe esas listas. Un schema que se
+lista con `PaginatedResponse[X]` declara `PAGE_EXAMPLES: ClassVar[list[dict]]`
+con 3 variantes, y la página las publica como su `data`.
+
 `core/openapi.py` conserva estos ejemplos tal como están escritos, con su
-orden, al generar la documentación.
+orden, al generar la documentación. `tests/test_schemas_examples.py` verifica
+estas reglas sobre los schemas y sobre el OpenAPI publicado.
 
 ---
 
@@ -1330,6 +1347,14 @@ Cada endpoint pertenece a exactamente uno de estos niveles, evaluados en orden:
   obtiene únicamente de `current_user.id`; nunca se acepta un id del path,
   query o body. Así, un rol sin acceso al módulo de usuarios puede consultar y
   editar su propio perfil y cambiar su contraseña.
+- **Excepción de `GET /usuarios/me`:** además de su plan, embebe su tarjeta
+  completa como la ve su dueño (`UsuarioResponseMe` con `TarjetaResponseMe`):
+  theme, seo y vitrina, y todas las hijas no eliminadas, visibles u ocultas,
+  hasta el último nivel; `null` si todavía no la creó. Rompe dos reglas a
+  propósito (embebe un "me apuntan" y Extensiones 1:1 con rutas propias),
+  porque el dueño la recibe entera en una sola llamada para decidir qué editar.
+  Cada parte se sigue editando en su propia ruta. Los dos schemas viven en
+  `tarjeta/schemas.py` para evitar un import circular con `usuario/schemas.py`.
 - **`require_permission`:** opción por defecto para toda operación sobre un
   recurso de un módulo, sea CRUD o no.
 - **`require_role`:** solo cuando el endpoint está definido por el rol, es

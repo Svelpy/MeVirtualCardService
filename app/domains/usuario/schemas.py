@@ -1,9 +1,17 @@
 from datetime import datetime
+from typing import ClassVar
 from uuid import UUID
 
 from pydantic import ConfigDict, EmailStr, Field, field_validator
 
-from app.domains.plan.schemas import PLAN_REF_EXAMPLE, PLAN_RESPONSE_EXAMPLE, PlanRef, PlanResponse
+from app.domains.plan.schemas import (
+    PLAN_IDS,
+    PLAN_REF_EXAMPLE,
+    PLAN_REF_EXAMPLES,
+    PLAN_RESPONSE_EXAMPLE,
+    PlanRef,
+    PlanResponse,
+)
 from app.shared.enums import Role
 from app.shared.schemas.base import AUDIT_EXAMPLE, AuditMixin, SchemaBase, reject_null
 from app.shared.services.validators import validator_email, validator_password
@@ -23,6 +31,34 @@ USUARIO_RESPONSE_EXAMPLE = {
     "updated_at": "2026-02-01T09:00:00Z",
 }
 USUARIO_REF_EXAMPLE = {"id": USUARIO_ID, "email": "ana@example.com"}
+
+USUARIO_RESPONSE_EXAMPLES = [
+    USUARIO_RESPONSE_EXAMPLE,
+    {
+        "id": "8f14e45f-ceea-467a-9575-6b3f0c1a2b3d",
+        "email": "luis.mamani@example.com",
+        "rol": "admin",
+        "plan_id": PLAN_IDS[2],
+        "plan_vence_at": "2027-03-01T00:00:00Z",
+        "is_active": True,
+        "email_verified_at": "2026-01-10T12:00:00Z",
+        "created_at": "2026-01-10T11:45:00Z",
+        "updated_at": "2026-01-10T12:00:00Z",
+    },
+    {
+        "id": "8f14e45f-ceea-467a-9575-6b3f0c1a2b3e",
+        "email": "carla.rojas@example.com",
+        "rol": "user",
+        "plan_id": PLAN_IDS[0],
+        "plan_vence_at": "2026-02-07T09:20:00Z",
+        "is_active": False,
+        "email_verified_at": "2026-01-31T09:30:00Z",
+        "created_at": "2026-01-31T09:20:00Z",
+        "updated_at": "2026-02-15T18:00:00Z",
+    },
+]
+USUARIO_REF_EXAMPLES = [{"id": usuario["id"], "email": usuario["email"]} for usuario in USUARIO_RESPONSE_EXAMPLES]
+_PLAN_REFS = {plan["id"]: plan for plan in PLAN_REF_EXAMPLES}
 
 
 # =================================
@@ -115,6 +151,11 @@ class UsuarioRef(SchemaBase):
 
 class UsuarioResponseItemList(UsuarioResponse):
     plan: PlanRef
+
+    # Ejemplo de GET /usuarios.
+    PAGE_EXAMPLES: ClassVar[list[dict]] = [
+        {**usuario, "plan": _PLAN_REFS[usuario["plan_id"]]} for usuario in USUARIO_RESPONSE_EXAMPLES
+    ]
 
     model_config = ConfigDict(json_schema_extra={"example": {**USUARIO_RESPONSE_EXAMPLE, "plan": PLAN_REF_EXAMPLE}})
 

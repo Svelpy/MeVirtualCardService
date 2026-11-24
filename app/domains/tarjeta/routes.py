@@ -50,10 +50,7 @@ async def get_public_tarjeta_by_id(
     "/public/{slug}",
     response_model=TarjetaPublic,
     summary="Ver una tarjeta publicada",
-    description=(
-        "Todo su árbol, solo con lo visible y sin auditoría. Los items de la vitrina se piden aparte, "
-        "paginados, en GET /vitrina-items/public."
-    ),
+    description="Todo su árbol, vitrina e items incluidos, solo con lo visible y sin auditoría.",
     responses=error_responses(404, 500),
 )
 async def get_public_tarjeta(

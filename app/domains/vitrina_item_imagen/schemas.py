@@ -5,6 +5,7 @@ from uuid import UUID
 from pydantic import ConfigDict, Field, field_validator
 
 from app.shared.schemas.base import AUDIT_EXAMPLE, SMALLINT_MAX, AuditMixin, SchemaBase
+from app.shared.schemas.examples import nested_examples, pick, response_examples
 from app.shared.services.validators import (
     validator_https_url,
     validator_non_empty_text,
@@ -12,21 +13,40 @@ from app.shared.services.validators import (
 )
 
 
-_ID = "a87ff679-a2f3-4e1d-9c8b-7a6f5e4d3c2b"
+_IDS = (
+    "a87ff679-a2f3-4e1d-9c8b-7a6f5e4d3c2b",
+    "a87ff679-a2f3-4e1d-9c8b-7a6f5e4d3c2c",
+    "a87ff679-a2f3-4e1d-9c8b-7a6f5e4d3c2d",
+)
+_ID = _IDS[0]
 
-VITRINA_ITEM_IMAGEN_CREATE_EXAMPLE = {
-    "url": "https://res.cloudinary.com/demo/image/upload/v1/consulta.jpg",
-    "alt": "Consultorio pediátrico",
-    "orden": 0,
-}
-VITRINA_ITEM_IMAGEN_RESPONSE_EXAMPLE = {
-    "id": _ID,
-    "item_id": "e4da3b7f-bbce-4a4b-8f3c-2d1e0f9a8b7c",
-    **VITRINA_ITEM_IMAGEN_CREATE_EXAMPLE,
-    "created_at": "2026-01-15T14:30:00Z",
-    "updated_at": "2026-02-01T09:00:00Z",
-}
-VITRINA_ITEM_IMAGEN_PUBLIC_EXAMPLE = {"id": _ID, **VITRINA_ITEM_IMAGEN_CREATE_EXAMPLE}
+# Una sola principal (orden 0) por item.
+VITRINA_ITEM_IMAGEN_CREATE_EXAMPLES = [
+    {
+        "url": "https://res.cloudinary.com/demo/image/upload/v1/consulta.jpg",
+        "alt": "Consultorio pediátrico",
+        "orden": 0,
+    },
+    {
+        "url": "https://res.cloudinary.com/demo/image/upload/v1/sala-espera.jpg",
+        "alt": "Sala de espera con juegos",
+        "orden": 1,
+    },
+    {
+        "url": "https://res.cloudinary.com/demo/image/upload/v1/control-crecimiento.jpg",
+        "alt": "Control de peso y talla",
+        "orden": 2,
+    },
+]
+VITRINA_ITEM_IMAGEN_RESPONSE_EXAMPLES = response_examples(
+    VITRINA_ITEM_IMAGEN_CREATE_EXAMPLES, _IDS, item_id="e4da3b7f-bbce-4a4b-8f3c-2d1e0f9a8b7c"
+)
+VITRINA_ITEM_IMAGEN_PUBLIC_EXAMPLES = pick(VITRINA_ITEM_IMAGEN_RESPONSE_EXAMPLES, "id", "url", "alt", "orden")
+VITRINA_ITEM_IMAGEN_NESTED_EXAMPLES = nested_examples(VITRINA_ITEM_IMAGEN_CREATE_EXAMPLES, _IDS)
+
+VITRINA_ITEM_IMAGEN_CREATE_EXAMPLE = VITRINA_ITEM_IMAGEN_CREATE_EXAMPLES[0]
+VITRINA_ITEM_IMAGEN_RESPONSE_EXAMPLE = VITRINA_ITEM_IMAGEN_RESPONSE_EXAMPLES[0]
+VITRINA_ITEM_IMAGEN_PUBLIC_EXAMPLE = VITRINA_ITEM_IMAGEN_PUBLIC_EXAMPLES[0]
 
 VITRINA_ITEM_IMAGEN_MAX = 3
 

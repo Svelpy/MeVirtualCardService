@@ -5,6 +5,12 @@ from uuid import UUID
 from pydantic import ConfigDict, Field, field_validator
 
 from app.shared.schemas.base import AUDIT_EXAMPLE, SMALLINT_MAX, AuditMixin, SchemaBase
+from app.shared.schemas.examples import (
+    TARJETA_ID_EXAMPLE,
+    nested_examples,
+    pick,
+    response_examples,
+)
 from app.shared.services.validators import (
     validator_boolean,
     validator_non_empty_text,
@@ -12,18 +18,29 @@ from app.shared.services.validators import (
 )
 
 
-VITRINA_CATEGORIA_ID = "1f0e3dad-9990-4345-8b6a-5c4d3e2f1a09"
+VITRINA_CATEGORIA_IDS = (
+    "1f0e3dad-9990-4345-8b6a-5c4d3e2f1a09",
+    "1f0e3dad-9990-4345-8b6a-5c4d3e2f1a10",
+    "1f0e3dad-9990-4345-8b6a-5c4d3e2f1a11",
+)
+VITRINA_CATEGORIA_ID = VITRINA_CATEGORIA_IDS[0]
 
-VITRINA_CATEGORIA_CREATE_EXAMPLE = {"nombre": "Consultas", "is_visible": True, "orden": 0}
-VITRINA_CATEGORIA_RESPONSE_EXAMPLE = {
-    "id": VITRINA_CATEGORIA_ID,
-    "vitrina_id": "3f1c2a9e-8b7d-4c6e-9a1b-2c3d4e5f6a7b",
-    **VITRINA_CATEGORIA_CREATE_EXAMPLE,
-    "created_at": "2026-01-15T14:30:00Z",
-    "updated_at": "2026-02-01T09:00:00Z",
-}
-VITRINA_CATEGORIA_REF_EXAMPLE = {"id": VITRINA_CATEGORIA_ID, "nombre": "Consultas"}
-VITRINA_CATEGORIA_PUBLIC_EXAMPLE = VITRINA_CATEGORIA_REF_EXAMPLE
+VITRINA_CATEGORIA_CREATE_EXAMPLES = [
+    {"nombre": "Consultas", "is_visible": True, "orden": 0},
+    {"nombre": "Paquetes", "is_visible": True, "orden": 1},
+    {"nombre": "Talleres", "is_visible": False, "orden": 2},
+]
+VITRINA_CATEGORIA_RESPONSE_EXAMPLES = response_examples(
+    VITRINA_CATEGORIA_CREATE_EXAMPLES, VITRINA_CATEGORIA_IDS, vitrina_id=TARJETA_ID_EXAMPLE
+)
+VITRINA_CATEGORIA_REF_EXAMPLES = pick(VITRINA_CATEGORIA_RESPONSE_EXAMPLES, "id", "nombre")
+VITRINA_CATEGORIA_PUBLIC_EXAMPLES = VITRINA_CATEGORIA_REF_EXAMPLES
+VITRINA_CATEGORIA_NESTED_EXAMPLES = nested_examples(VITRINA_CATEGORIA_CREATE_EXAMPLES, VITRINA_CATEGORIA_IDS)
+
+VITRINA_CATEGORIA_CREATE_EXAMPLE = VITRINA_CATEGORIA_CREATE_EXAMPLES[0]
+VITRINA_CATEGORIA_RESPONSE_EXAMPLE = VITRINA_CATEGORIA_RESPONSE_EXAMPLES[0]
+VITRINA_CATEGORIA_REF_EXAMPLE = VITRINA_CATEGORIA_REF_EXAMPLES[0]
+VITRINA_CATEGORIA_PUBLIC_EXAMPLE = VITRINA_CATEGORIA_PUBLIC_EXAMPLES[0]
 
 VITRINA_CATEGORIA_MAX = 10
 

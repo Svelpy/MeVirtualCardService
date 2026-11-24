@@ -267,6 +267,47 @@ async def test_la_lectura_publica_muestra_solo_lo_visible(client, user):
     assert (await client.get(f"{TARJETAS}/public/id/{tarjeta['id']}")).json() == public
 
 
+async def test_me_trae_la_tarjeta_completa_como_la_ve_su_dueno(client, db_session, user):
+    me = (await client.get("/api/v1/usuarios/me", headers=auth_header(user))).json()
+    assert me["tarjeta"] is None and me["plan"]["id"] == str(user.plan_id)  # todavía no la creó
+
+    tarjeta = await _crear(client, user)
+    vitrina_url = f"/api/v1/vitrinas/{tarjeta['id']}"
+    talleres = (await client.get(vitrina_url, headers=auth_header(user))).json()["categorias"][0]
+    items = [
+        {"titulo": "Taller", "categoria_id": talleres["id"], "precio": "100", "imagenes": [{"url": uploaded_image_url()}]},
+        {"titulo": "Oculto", "is_visible": False, "precio": "50"},
+    ]
+    response = await client.patch(
+        vitrina_url, json={"mostrar_precios": False, "items": items}, headers=auth_header(user)
+    )
+    assert response.status_code == 200, response.text
+    otro = await create_usuario(db_session, "otro@test.example.com")
+    await _crear(client, otro)
+
+    response = await client.get("/api/v1/usuarios/me", headers=auth_header(user))
+    assert response.status_code == 200
+    mia = response.json()["tarjeta"]
+    assert mia["id"] == tarjeta["id"] and mia["user_id"] == str(user.id)
+    assert mia["theme"]["preset"] == "oscuro" and mia["seo"]["meta_title"] == "Dra. Ana"
+    assert len(mia["secciones"]) == 8
+    # Lo oculto también viene: el dueño decide qué editar.
+    assert {c["valor"] for c in mia["contactos"]} == {"70000001", "70000002", "ana@clinica.example.com"}
+    assert [c["nombre"] for c in mia["vitrina"]["categorias"]] == ["Talleres", "Consultas"]
+    assert {i["titulo"]: i["precio"] for i in mia["vitrina"]["items"]} == {"Taller": "100.00", "Oculto": "50.00"}
+    taller = next(i for i in mia["vitrina"]["items"] if i["titulo"] == "Taller")
+    assert taller["categoria"]["nombre"] == "Talleres" and len(taller["imagenes"]) == 1
+    assert len(mia["ubicaciones"][0]["horarios"]) == 3
+    # Las hijas vienen igual que en el detalle de la tarjeta.
+    detail = (await client.get(f"{TARJETAS}/{tarjeta['id']}", headers=auth_header(user))).json()
+    for field in ("secciones", "contactos", "ubicaciones", "redes", "educaciones", "certificaciones", "faqs"):
+        assert mia[field] == detail[field], field
+    assert (await client.get(f"{TARJETAS}/me", headers=auth_header(user))).status_code in (404, 422)
+
+    await client.delete(f"{TARJETAS}/{tarjeta['id']}", headers=auth_header(user))
+    assert (await client.get("/api/v1/usuarios/me", headers=auth_header(user))).json()["tarjeta"] is None
+
+
 async def test_la_lectura_publica_exige_dueno_activo_y_plan_vigente(client, db_session, admin):
     vencido = await create_usuario(db_session, "vence@test.example.com", plan_vence_at_days=1)
     tarjeta = await _crear(client, vencido)

@@ -7,6 +7,12 @@ from pydantic import ConfigDict, Field, ValidationInfo, field_validator, model_v
 
 from app.shared.enums import TipoContacto
 from app.shared.schemas.base import AUDIT_EXAMPLE, SMALLINT_MAX, AuditMixin, SchemaBase
+from app.shared.schemas.examples import (
+    TARJETA_ID_EXAMPLE,
+    nested_examples,
+    pick,
+    response_examples,
+)
 from app.shared.services.validators import (
     validator_boolean,
     validator_email,
@@ -17,32 +23,53 @@ from app.shared.services.validators import (
 )
 
 
-_ID = "c51ce410-c124-4a10-8e4d-2b3a4c5d6e7f"
+_IDS = (
+    "c51ce410-c124-4a10-8e4d-2b3a4c5d6e7f",
+    "aab32389-22bc-4c56-8a7e-3f2e1d0c9b01",
+    "9bf31c7f-f062-4a3a-8b2b-5c4d3e2f1a02",
+)
+_ID = _IDS[0]
 
-TARJETA_CONTACTO_CREATE_EXAMPLE = {
-    "tipo": "phone",
-    "valor": "+59170000001",
-    "etiqueta": "Celular",
-    "is_wpp": True,
-    "is_primary": True,
-    "is_visible": True,
-    "orden": 0,
-}
-TARJETA_CONTACTO_RESPONSE_EXAMPLE = {
-    "id": _ID,
-    "tarjeta_id": "3f1c2a9e-8b7d-4c6e-9a1b-2c3d4e5f6a7b",
-    **TARJETA_CONTACTO_CREATE_EXAMPLE,
-    "created_at": "2026-01-15T14:30:00Z",
-    "updated_at": "2026-02-01T09:00:00Z",
-}
-TARJETA_CONTACTO_PUBLIC_EXAMPLE = {
-    "id": _ID,
-    "tipo": "phone",
-    "valor": "+59170000001",
-    "etiqueta": "Celular",
-    "is_wpp": True,
-    "is_primary": True,
-}
+TARJETA_CONTACTO_CREATE_EXAMPLES = [
+    {
+        "tipo": "phone",
+        "valor": "+59170000001",
+        "etiqueta": "Celular",
+        "is_wpp": True,
+        "is_primary": True,
+        "is_visible": True,
+        "orden": 0,
+    },
+    {
+        "tipo": "email",
+        "valor": "consultas@draanaperez.com",
+        "etiqueta": "Correo de consultas",
+        "is_wpp": False,
+        "is_primary": True,
+        "is_visible": True,
+        "orden": 1,
+    },
+    {
+        "tipo": "website",
+        "valor": "https://draanaperez.com",
+        "etiqueta": "Sitio web",
+        "is_wpp": False,
+        "is_primary": False,
+        "is_visible": False,
+        "orden": 2,
+    },
+]
+TARJETA_CONTACTO_RESPONSE_EXAMPLES = response_examples(
+    TARJETA_CONTACTO_CREATE_EXAMPLES, _IDS, tarjeta_id=TARJETA_ID_EXAMPLE
+)
+TARJETA_CONTACTO_PUBLIC_EXAMPLES = pick(
+    TARJETA_CONTACTO_RESPONSE_EXAMPLES, "id", "tipo", "valor", "etiqueta", "is_wpp", "is_primary"
+)
+TARJETA_CONTACTO_NESTED_EXAMPLES = nested_examples(TARJETA_CONTACTO_CREATE_EXAMPLES, _IDS)
+
+TARJETA_CONTACTO_CREATE_EXAMPLE = TARJETA_CONTACTO_CREATE_EXAMPLES[0]
+TARJETA_CONTACTO_RESPONSE_EXAMPLE = TARJETA_CONTACTO_RESPONSE_EXAMPLES[0]
+TARJETA_CONTACTO_PUBLIC_EXAMPLE = TARJETA_CONTACTO_PUBLIC_EXAMPLES[0]
 
 TARJETA_CONTACTO_MAX = 10
 

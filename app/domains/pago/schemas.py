@@ -1,13 +1,23 @@
 from datetime import datetime
 from decimal import Decimal
+from typing import ClassVar
 from uuid import UUID
 
 from pydantic import ConfigDict, Field, field_validator
 
-from app.domains.plan.schemas import PLAN_REF_EXAMPLE, PLAN_RESPONSE_EXAMPLE, PlanRef, PlanResponse
+from app.domains.plan.schemas import (
+    PLAN_IDS,
+    PLAN_REF_EXAMPLE,
+    PLAN_REF_EXAMPLES,
+    PLAN_RESPONSE_EXAMPLE,
+    PlanRef,
+    PlanResponse,
+)
 from app.domains.usuario.schemas import (
     USUARIO_REF_EXAMPLE,
+    USUARIO_REF_EXAMPLES,
     USUARIO_RESPONSE_EXAMPLE,
+    USUARIO_RESPONSE_EXAMPLES,
     UsuarioRef,
     UsuarioResponse,
 )
@@ -37,6 +47,46 @@ PAGO_RESPONSE_EXAMPLE = {
     "created_at": "2026-01-15T14:30:00Z",
     "updated_at": "2026-01-15T14:30:00Z",
 }
+
+# Un pago normal tiene reverses_id null: como un ejemplo no muestra campos vacíos,
+# las variantes son reversos (monto negativo), cada uno de un pago distinto.
+PAGO_RESPONSE_EXAMPLES = [
+    PAGO_RESPONSE_EXAMPLE,
+    {
+        "id": "c4ca4238-a0b9-4382-8dcc-509a6f75849c",
+        "user_id": USUARIO_RESPONSE_EXAMPLES[1]["id"],
+        "plan_id": PLAN_IDS[2],
+        "monto": "-200.00",
+        "moneda": "USD",
+        "metodo": "transferencia",
+        "referencia_externa": "BNB-20260301-7781",
+        "comprobante_url": "https://res.cloudinary.com/demo/image/upload/v1/comprobante-transferencia.jpg",
+        "periodo_inicio": "2026-03-01T00:00:00Z",
+        "periodo_fin": "2027-03-01T00:00:00Z",
+        "reverses_id": "c81e728d-9d4c-4f63-9f5a-1e2d3c4b5a70",
+        "idempotency_key": "pago-8f14e45f-20260301-0002",
+        "created_at": "2026-03-02T10:15:00Z",
+        "updated_at": "2026-03-02T10:15:00Z",
+    },
+    {
+        "id": "c4ca4238-a0b9-4382-8dcc-509a6f75849d",
+        "user_id": USUARIO_RESPONSE_EXAMPLES[2]["id"],
+        "plan_id": PLAN_IDS[1],
+        "monto": "-80.00",
+        "moneda": "USD",
+        "metodo": "efectivo",
+        "referencia_externa": "RECIBO-000452",
+        "comprobante_url": "https://res.cloudinary.com/demo/image/upload/v1/recibo-efectivo.jpg",
+        "periodo_inicio": "2026-02-01T00:00:00Z",
+        "periodo_fin": "2027-02-01T00:00:00Z",
+        "reverses_id": "c81e728d-9d4c-4f63-9f5a-1e2d3c4b5a71",
+        "idempotency_key": "pago-8f14e45f-20260201-0003",
+        "created_at": "2026-02-03T16:40:00Z",
+        "updated_at": "2026-02-03T16:40:00Z",
+    },
+]
+_USUARIO_REFS = {usuario["id"]: usuario for usuario in USUARIO_REF_EXAMPLES}
+_PLAN_REFS = {plan["id"]: plan for plan in PLAN_REF_EXAMPLES}
 
 
 # =================================
@@ -127,6 +177,12 @@ class PagoResponseAudit(AuditMixin, PagoResponse):
 class PagoResponseItemList(PagoResponse):
     user: UsuarioRef
     plan: PlanRef
+
+    # Ejemplo de GET /pagos.
+    PAGE_EXAMPLES: ClassVar[list[dict]] = [
+        {**pago, "user": _USUARIO_REFS[pago["user_id"]], "plan": _PLAN_REFS[pago["plan_id"]]}
+        for pago in PAGO_RESPONSE_EXAMPLES
+    ]
 
     model_config = ConfigDict(
         json_schema_extra={"example": {**PAGO_RESPONSE_EXAMPLE, "user": USUARIO_REF_EXAMPLE, "plan": PLAN_REF_EXAMPLE}}

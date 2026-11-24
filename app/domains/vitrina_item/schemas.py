@@ -5,12 +5,17 @@ from uuid import UUID
 
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
-from app.domains.vitrina_categoria.schemas import VITRINA_CATEGORIA_RESPONSE_EXAMPLE, VitrinaCategoriaResponse
+from app.domains.vitrina_categoria.schemas import (
+    VITRINA_CATEGORIA_IDS,
+    VITRINA_CATEGORIA_RESPONSE_EXAMPLES,
+    VitrinaCategoriaResponse,
+)
 from app.domains.vitrina_item_imagen.schemas import (
-    VITRINA_ITEM_IMAGEN_CREATE_EXAMPLE,
+    VITRINA_ITEM_IMAGEN_CREATE_EXAMPLES,
     VITRINA_ITEM_IMAGEN_MAX,
-    VITRINA_ITEM_IMAGEN_PUBLIC_EXAMPLE,
-    VITRINA_ITEM_IMAGEN_RESPONSE_EXAMPLE,
+    VITRINA_ITEM_IMAGEN_NESTED_EXAMPLES,
+    VITRINA_ITEM_IMAGEN_PUBLIC_EXAMPLES,
+    VITRINA_ITEM_IMAGEN_RESPONSE_EXAMPLES,
     VitrinaItemImagenCreate,
     VitrinaItemImagenNestedItem,
     VitrinaItemImagenPublic,
@@ -18,6 +23,7 @@ from app.domains.vitrina_item_imagen.schemas import (
     ensure_one_principal,
 )
 from app.shared.schemas.base import AUDIT_EXAMPLE, SMALLINT_MAX, AuditMixin, SchemaBase
+from app.shared.schemas.examples import TARJETA_ID_EXAMPLE, merge, nested_examples, pick, response_examples
 from app.shared.services.validators import (
     validator_boolean,
     validator_non_empty_text,
@@ -27,54 +33,103 @@ from app.shared.services.validators import (
 )
 
 
-_ID = "e4da3b7f-bbce-4a4b-8f3c-2d1e0f9a8b7c"
-_VITRINA_ID = "3f1c2a9e-8b7d-4c6e-9a1b-2c3d4e5f6a7b"
-_CATEGORIA_ID = "1f0e3dad-9990-4345-8b6a-5c4d3e2f1a09"
+_IDS = (
+    "e4da3b7f-bbce-4a4b-8f3c-2d1e0f9a8b7c",
+    "e4da3b7f-bbce-4a4b-8f3c-2d1e0f9a8b7d",
+    "e4da3b7f-bbce-4a4b-8f3c-2d1e0f9a8b7e",
+)
+_ID = _IDS[0]
 
-_CAMPOS_EXAMPLE = {
-    "titulo": "Consulta pediátrica",
-    "descripcion": "Evaluación general, control de crecimiento y orientación a padres.",
-    "precio": "250.00",
-    "precio_anterior": "300.00",
-    "precio_etiqueta": "por sesión",
-    "campo1": "45 minutos",
-    "campo2": "Presencial",
-    "campo3": "0 a 14 años",
-    "campo4": "Informe escrito",
-    "destacado": True,
-    "is_visible": True,
-    "orden": 0,
-}
-VITRINA_ITEM_CREATE_EXAMPLE = {"categoria_id": _CATEGORIA_ID, **_CAMPOS_EXAMPLE}
-VITRINA_ITEM_RESPONSE_EXAMPLE = {
-    "id": _ID,
-    "vitrina_id": _VITRINA_ID,
-    **VITRINA_ITEM_CREATE_EXAMPLE,
-    "created_at": "2026-01-15T14:30:00Z",
-    "updated_at": "2026-02-01T09:00:00Z",
-}
-VITRINA_ITEM_PUBLIC_EXAMPLE = {
-    "id": _ID,
-    "categoria_id": _CATEGORIA_ID,
-    "titulo": "Consulta pediátrica",
-    "descripcion": "Evaluación general, control de crecimiento y orientación a padres.",
-    "precio": "250.00",
-    "precio_anterior": "300.00",
-    "precio_etiqueta": "por sesión",
-    "campo1": "45 minutos",
-    "campo2": "Presencial",
-    "campo3": "0 a 14 años",
-    "campo4": "Informe escrito",
-    "destacado": True,
-    "imagenes": [VITRINA_ITEM_IMAGEN_PUBLIC_EXAMPLE],
-}
+# Cada item usa una de las categorías de ejemplo de su vitrina.
+VITRINA_ITEM_CREATE_EXAMPLES = [
+    {
+        "categoria_id": VITRINA_CATEGORIA_IDS[0],
+        "titulo": "Consulta pediátrica",
+        "descripcion": "Evaluación general, control de crecimiento y orientación a padres.",
+        "precio": "250.00",
+        "precio_anterior": "300.00",
+        "precio_etiqueta": "por sesión",
+        "campo1": "45 minutos",
+        "campo2": "Presencial",
+        "campo3": "0 a 14 años",
+        "campo4": "Informe escrito",
+        "destacado": True,
+        "is_visible": True,
+        "orden": 0,
+    },
+    {
+        "categoria_id": VITRINA_CATEGORIA_IDS[1],
+        "titulo": "Paquete control del primer año",
+        "descripcion": "Seis controles de niño sano durante el primer año de vida.",
+        "precio": "1200.00",
+        "precio_anterior": "1500.00",
+        "precio_etiqueta": "desde",
+        "campo1": "6 sesiones",
+        "campo2": "Presencial",
+        "campo3": "0 a 12 meses",
+        "campo4": "Carnet de vacunas al día",
+        "destacado": False,
+        "is_visible": True,
+        "orden": 1,
+    },
+    {
+        "categoria_id": VITRINA_CATEGORIA_IDS[0],
+        "titulo": "Teleconsulta de seguimiento",
+        "descripcion": "Revisión de resultados y ajuste de tratamiento por videollamada.",
+        "precio": "150.00",
+        "precio_anterior": "180.00",
+        "precio_etiqueta": "por llamada",
+        "campo1": "20 minutos",
+        "campo2": "Virtual",
+        "campo3": "Pacientes en tratamiento",
+        "campo4": "Receta digital",
+        "destacado": False,
+        "is_visible": False,
+        "orden": 2,
+    },
+]
+VITRINA_ITEM_RESPONSE_EXAMPLES = response_examples(VITRINA_ITEM_CREATE_EXAMPLES, _IDS, vitrina_id=TARJETA_ID_EXAMPLE)
+VITRINA_ITEM_PUBLIC_EXAMPLES = merge(
+    pick(
+        VITRINA_ITEM_RESPONSE_EXAMPLES,
+        "id",
+        "categoria_id",
+        "titulo",
+        "descripcion",
+        "precio",
+        "precio_anterior",
+        "precio_etiqueta",
+        "campo1",
+        "campo2",
+        "campo3",
+        "campo4",
+        "destacado",
+    ),
+    [{"imagenes": VITRINA_ITEM_IMAGEN_PUBLIC_EXAMPLES}] * len(_IDS),
+)
+VITRINA_ITEM_CREATE_NESTED_EXAMPLES = merge(
+    VITRINA_ITEM_CREATE_EXAMPLES, [{"imagenes": VITRINA_ITEM_IMAGEN_CREATE_EXAMPLES}] * len(_IDS)
+)
+VITRINA_ITEM_NESTED_EXAMPLES = nested_examples(
+    merge(VITRINA_ITEM_CREATE_EXAMPLES, [{"imagenes": VITRINA_ITEM_IMAGEN_NESTED_EXAMPLES}] * len(_IDS)), _IDS
+)
+_CATEGORIAS = {categoria["id"]: categoria for categoria in VITRINA_CATEGORIA_RESPONSE_EXAMPLES}
+VITRINA_ITEM_RESPONSE_DETAIL_EXAMPLES = merge(
+    VITRINA_ITEM_RESPONSE_EXAMPLES,
+    [
+        {
+            "categoria": _CATEGORIAS[item["categoria_id"]],
+            "imagenes": [{**imagen, "item_id": item["id"]} for imagen in VITRINA_ITEM_IMAGEN_RESPONSE_EXAMPLES],
+        }
+        for item in VITRINA_ITEM_RESPONSE_EXAMPLES
+    ],
+)
 
-VITRINA_ITEM_CREATE_NESTED_EXAMPLE = {**VITRINA_ITEM_CREATE_EXAMPLE, "imagenes": [VITRINA_ITEM_IMAGEN_CREATE_EXAMPLE]}
-VITRINA_ITEM_RESPONSE_DETAIL_EXAMPLE = {
-    **VITRINA_ITEM_RESPONSE_EXAMPLE,
-    "categoria": VITRINA_CATEGORIA_RESPONSE_EXAMPLE,
-    "imagenes": [VITRINA_ITEM_IMAGEN_RESPONSE_EXAMPLE],
-}
+VITRINA_ITEM_CREATE_EXAMPLE = VITRINA_ITEM_CREATE_EXAMPLES[0]
+VITRINA_ITEM_RESPONSE_EXAMPLE = VITRINA_ITEM_RESPONSE_EXAMPLES[0]
+VITRINA_ITEM_PUBLIC_EXAMPLE = VITRINA_ITEM_PUBLIC_EXAMPLES[0]
+VITRINA_ITEM_CREATE_NESTED_EXAMPLE = VITRINA_ITEM_CREATE_NESTED_EXAMPLES[0]
+VITRINA_ITEM_RESPONSE_DETAIL_EXAMPLE = VITRINA_ITEM_RESPONSE_DETAIL_EXAMPLES[0]
 
 # Hija embebida de la vitrina: "contengo pocos".
 VITRINA_ITEM_MAX = 25
@@ -225,15 +280,7 @@ class VitrinaItemNestedItem(VitrinaItemCreateNested):
         ensure_one_principal(value)
         return validator_unique_ids(value)
 
-    model_config = ConfigDict(
-        json_schema_extra={
-            "example": {
-                **VITRINA_ITEM_CREATE_EXAMPLE,
-                "imagenes": [{**VITRINA_ITEM_IMAGEN_CREATE_EXAMPLE, "id": VITRINA_ITEM_IMAGEN_RESPONSE_EXAMPLE["id"]}],
-                "id": _ID,
-            }
-        }
-    )
+    model_config = ConfigDict(json_schema_extra={"example": VITRINA_ITEM_NESTED_EXAMPLES[0]})
 
 
 class VitrinaItemResponseDetail(VitrinaItemResponse):

@@ -15,10 +15,12 @@ from app.domains.auth.schemas import CurrentUser
 from app.domains.pago.repositories import PagoRepository
 from app.domains.plan.services import PlanService
 from app.domains.tarjeta.repositories import TarjetaRepository
+from app.domains.tarjeta.schemas import UsuarioResponseMe
 from app.domains.usuario.models import Usuario
 from app.domains.usuario.repositories import UsuarioRepository
 from app.domains.usuario.schemas import (
     UsuarioCreate,
+    UsuarioResponseDetail,
     UsuarioResponseItemList,
     UsuarioUpdate,
     UsuarioUpdateMe,
@@ -114,6 +116,17 @@ class UsuarioService:
             _ensure_can_manage(actor, changes["rol"])
         await UsuarioService._apply_changes(db_session, usuario, changes, actor)
         return await UsuarioService.get(db_session, usuario_id)
+
+    @staticmethod
+    async def get_me(db_session: AsyncSession, actor: CurrentUser) -> UsuarioResponseMe:
+        """
+        /me (§24): el usuario autenticado, su plan y su tarjeta completa, como la
+        ve su dueño (null si todavía no la creó). El id sale solo de actor.id.
+        """
+        usuario = await UsuarioService.get(db_session, actor.id)
+        tarjeta = await TarjetaRepository.get_by_user(db_session, actor.id)
+        detail = UsuarioResponseDetail.model_validate(usuario).model_dump()
+        return UsuarioResponseMe.model_validate({**detail, "tarjeta": tarjeta}, from_attributes=True)
 
     @staticmethod
     async def update_me(db_session: AsyncSession, data: UsuarioUpdateMe, actor: CurrentUser) -> Usuario:

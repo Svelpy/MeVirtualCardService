@@ -6,20 +6,32 @@ from uuid import UUID
 from pydantic import ConfigDict, Field, field_serializer, field_validator, model_validator
 
 from app.shared.schemas.base import AUDIT_EXAMPLE, AuditMixin, SchemaBase
+from app.shared.schemas.examples import nested_examples, response_examples
 from app.shared.services.validators import validator_integer, validator_time
 
 
-_ID = "d3d94468-02a4-4c3b-9b8e-6f5e4d3c2b1a"
+_IDS = (
+    "d3d94468-02a4-4c3b-9b8e-6f5e4d3c2b1a",
+    "d3d94468-02a4-4c3b-9b8e-6f5e4d3c2b1b",
+    "d3d94468-02a4-4c3b-9b8e-6f5e4d3c2b1c",
+)
+_ID = _IDS[0]
 
-UBICACION_HORARIO_CREATE_EXAMPLE = {"dia_semana": 1, "hora_inicio": "08:30", "hora_fin": "12:30"}
-UBICACION_HORARIO_RESPONSE_EXAMPLE = {
-    "id": _ID,
-    "ubicacion_id": "1679091c-5a88-4faf-8c1b-0a9b8c7d6e5f",
-    **UBICACION_HORARIO_CREATE_EXAMPLE,
-    "created_at": "2026-01-15T14:30:00Z",
-    "updated_at": "2026-02-01T09:00:00Z",
-}
-UBICACION_HORARIO_PUBLIC_EXAMPLE = UBICACION_HORARIO_CREATE_EXAMPLE
+# Mañana y tarde del lunes (sin solaparse) y la mañana del sábado.
+UBICACION_HORARIO_CREATE_EXAMPLES = [
+    {"dia_semana": 1, "hora_inicio": "08:30", "hora_fin": "12:30"},
+    {"dia_semana": 1, "hora_inicio": "14:30", "hora_fin": "18:30"},
+    {"dia_semana": 6, "hora_inicio": "09:00", "hora_fin": "13:00"},
+]
+UBICACION_HORARIO_RESPONSE_EXAMPLES = response_examples(
+    UBICACION_HORARIO_CREATE_EXAMPLES, _IDS, ubicacion_id="1679091c-5a88-4faf-8c1b-0a9b8c7d6e5f"
+)
+UBICACION_HORARIO_PUBLIC_EXAMPLES = UBICACION_HORARIO_CREATE_EXAMPLES
+UBICACION_HORARIO_NESTED_EXAMPLES = nested_examples(UBICACION_HORARIO_CREATE_EXAMPLES, _IDS)
+
+UBICACION_HORARIO_CREATE_EXAMPLE = UBICACION_HORARIO_CREATE_EXAMPLES[0]
+UBICACION_HORARIO_RESPONSE_EXAMPLE = UBICACION_HORARIO_RESPONSE_EXAMPLES[0]
+UBICACION_HORARIO_PUBLIC_EXAMPLE = UBICACION_HORARIO_PUBLIC_EXAMPLES[0]
 
 # Tres tramos por día durante la semana.
 UBICACION_HORARIO_MAX = 21

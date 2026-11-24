@@ -1,5 +1,6 @@
 from datetime import datetime
 from decimal import Decimal
+from typing import ClassVar
 from uuid import UUID
 
 from pydantic import ConfigDict, Field, field_validator
@@ -31,6 +32,39 @@ PLAN_RESPONSE_EXAMPLE = {
     "updated_at": "2026-02-01T09:00:00Z",
 }
 PLAN_REF_EXAMPLE = {"id": PLAN_PRO_ID, "nombre": "Pro"}
+
+# Las 3 filas fijas, sembradas en la migración inicial.
+PLAN_IDS = (
+    "7b1e9c40-0000-4000-8000-000000000001",
+    PLAN_PRO_ID,
+    "7b1e9c40-0000-4000-8000-000000000003",
+)
+PLAN_RESPONSE_EXAMPLES = [
+    {
+        "id": PLAN_IDS[0],
+        "codigo": "free",
+        "nombre": "Free",
+        "precio": "0.00",
+        "moneda": "USD",
+        "duracion_dias": 7,
+        "is_visible": True,
+        "created_at": "2026-01-01T00:00:00Z",
+        "updated_at": "2026-01-01T00:00:00Z",
+    },
+    PLAN_RESPONSE_EXAMPLE,
+    {
+        "id": PLAN_IDS[2],
+        "codigo": "business",
+        "nombre": "Business",
+        "precio": "200.00",
+        "moneda": "USD",
+        "duracion_dias": 365,
+        "is_visible": False,
+        "created_at": "2026-01-01T00:00:00Z",
+        "updated_at": "2026-02-10T08:00:00Z",
+    },
+]
+PLAN_REF_EXAMPLES = [{"id": plan["id"], "nombre": plan["nombre"]} for plan in PLAN_RESPONSE_EXAMPLES]
 
 
 # =================================
@@ -84,6 +118,8 @@ class PlanResponse(SchemaBase):
     is_visible: bool
     created_at: datetime
     updated_at: datetime
+
+    PAGE_EXAMPLES: ClassVar[list[dict]] = PLAN_RESPONSE_EXAMPLES  # ejemplo de GET /planes
 
     model_config = ConfigDict(json_schema_extra={"example": PLAN_RESPONSE_EXAMPLE})
 

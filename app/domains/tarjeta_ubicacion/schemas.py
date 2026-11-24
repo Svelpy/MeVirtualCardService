@@ -6,10 +6,11 @@ from uuid import UUID
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from app.domains.ubicacion_horario.schemas import (
-    UBICACION_HORARIO_CREATE_EXAMPLE,
+    UBICACION_HORARIO_CREATE_EXAMPLES,
     UBICACION_HORARIO_MAX,
-    UBICACION_HORARIO_PUBLIC_EXAMPLE,
-    UBICACION_HORARIO_RESPONSE_EXAMPLE,
+    UBICACION_HORARIO_NESTED_EXAMPLES,
+    UBICACION_HORARIO_PUBLIC_EXAMPLES,
+    UBICACION_HORARIO_RESPONSE_EXAMPLES,
     UbicacionHorarioCreate,
     UbicacionHorarioNestedItem,
     UbicacionHorarioPublic,
@@ -17,6 +18,7 @@ from app.domains.ubicacion_horario.schemas import (
     ensure_no_overlap,
 )
 from app.shared.schemas.base import AUDIT_EXAMPLE, SMALLINT_MAX, AuditMixin, SchemaBase
+from app.shared.schemas.examples import TARJETA_ID_EXAMPLE, merge, nested_examples, pick, response_examples
 from app.shared.services.validators import (
     validator_boolean,
     validator_https_url,
@@ -28,39 +30,73 @@ from app.shared.services.validators import (
 )
 
 
-_ID = "1679091c-5a88-4faf-8c1b-0a9b8c7d6e5f"
+_IDS = (
+    "1679091c-5a88-4faf-8c1b-0a9b8c7d6e5f",
+    "1679091c-5a88-4faf-8c1b-0a9b8c7d6e60",
+    "1679091c-5a88-4faf-8c1b-0a9b8c7d6e61",
+)
+_ID = _IDS[0]
 
-TARJETA_UBICACION_CREATE_EXAMPLE = {
-    "nombre": "Consultorio Norte",
-    "direccion": "Av. Arce 2631, Edificio Torre Azul, piso 4",
-    "ciudad": "La Paz",
-    "departamento": "La Paz",
-    "pais": "Bolivia",
-    "maps_url": "https://maps.app.goo.gl/AbCdEf123456",
-    "lat": "-16.509710",
-    "lng": "-68.123920",
-    "is_visible": True,
-    "orden": 0,
-}
-TARJETA_UBICACION_RESPONSE_EXAMPLE = {
-    "id": _ID,
-    "tarjeta_id": "3f1c2a9e-8b7d-4c6e-9a1b-2c3d4e5f6a7b",
-    **TARJETA_UBICACION_CREATE_EXAMPLE,
-    "created_at": "2026-01-15T14:30:00Z",
-    "updated_at": "2026-02-01T09:00:00Z",
-}
-TARJETA_UBICACION_PUBLIC_EXAMPLE = {
-    "id": _ID,
-    "nombre": "Consultorio Norte",
-    "direccion": "Av. Arce 2631, Edificio Torre Azul, piso 4",
-    "ciudad": "La Paz",
-    "departamento": "La Paz",
-    "pais": "Bolivia",
-    "maps_url": "https://maps.app.goo.gl/AbCdEf123456",
-    "lat": "-16.509710",
-    "lng": "-68.123920",
-    "horarios": [UBICACION_HORARIO_PUBLIC_EXAMPLE],
-}
+TARJETA_UBICACION_CREATE_EXAMPLES = [
+    {
+        "nombre": "Consultorio Sopocachi",
+        "direccion": "Av. 6 de Agosto 2170, Edificio Torre Azul, piso 4",
+        "ciudad": "La Paz",
+        "departamento": "La Paz",
+        "pais": "Bolivia",
+        "maps_url": "https://maps.app.goo.gl/AbCdEf123456",
+        "lat": "-16.509710",
+        "lng": "-68.123920",
+        "is_visible": True,
+        "orden": 0,
+    },
+    {
+        "nombre": "Clínica Calacoto",
+        "direccion": "Calle 21 de Calacoto 8350",
+        "ciudad": "La Paz",
+        "departamento": "La Paz",
+        "pais": "Bolivia",
+        "maps_url": "https://maps.app.goo.gl/GhIjKl789012",
+        "lat": "-16.540120",
+        "lng": "-68.078450",
+        "is_visible": True,
+        "orden": 1,
+    },
+    {
+        "nombre": "Centro Médico El Alto",
+        "direccion": "Av. Juan Pablo II 1450, Ciudad Satélite",
+        "ciudad": "El Alto",
+        "departamento": "La Paz",
+        "pais": "Bolivia",
+        "maps_url": "https://maps.app.goo.gl/MnOpQr345678",
+        "lat": "-16.523400",
+        "lng": "-68.168900",
+        "is_visible": False,
+        "orden": 2,
+    },
+]
+TARJETA_UBICACION_RESPONSE_EXAMPLES = response_examples(
+    TARJETA_UBICACION_CREATE_EXAMPLES, _IDS, tarjeta_id=TARJETA_ID_EXAMPLE
+)
+TARJETA_UBICACION_PUBLIC_EXAMPLES = merge(
+    pick(
+        TARJETA_UBICACION_RESPONSE_EXAMPLES,
+        "id",
+        "nombre",
+        "direccion",
+        "ciudad",
+        "departamento",
+        "pais",
+        "maps_url",
+        "lat",
+        "lng",
+    ),
+    [{"horarios": UBICACION_HORARIO_PUBLIC_EXAMPLES}] * len(_IDS),
+)
+
+TARJETA_UBICACION_CREATE_EXAMPLE = TARJETA_UBICACION_CREATE_EXAMPLES[0]
+TARJETA_UBICACION_RESPONSE_EXAMPLE = TARJETA_UBICACION_RESPONSE_EXAMPLES[0]
+TARJETA_UBICACION_PUBLIC_EXAMPLE = TARJETA_UBICACION_PUBLIC_EXAMPLES[0]
 
 TARJETA_UBICACION_MAX = 10
 
@@ -169,14 +205,22 @@ class TarjetaUbicacionPublic(SchemaBase):
 # Ronda 2: schemas con relaciones
 # =================================
 
-TARJETA_UBICACION_CREATE_NESTED_EXAMPLE = {
-    **TARJETA_UBICACION_CREATE_EXAMPLE,
-    "horarios": [UBICACION_HORARIO_CREATE_EXAMPLE],
-}
-TARJETA_UBICACION_RESPONSE_DETAIL_EXAMPLE = {
-    **TARJETA_UBICACION_RESPONSE_EXAMPLE,
-    "horarios": [UBICACION_HORARIO_RESPONSE_EXAMPLE],
-}
+TARJETA_UBICACION_CREATE_NESTED_EXAMPLES = merge(
+    TARJETA_UBICACION_CREATE_EXAMPLES, [{"horarios": UBICACION_HORARIO_CREATE_EXAMPLES}] * len(_IDS)
+)
+TARJETA_UBICACION_NESTED_EXAMPLES = nested_examples(
+    merge(TARJETA_UBICACION_CREATE_EXAMPLES, [{"horarios": UBICACION_HORARIO_NESTED_EXAMPLES}] * len(_IDS)), _IDS
+)
+TARJETA_UBICACION_RESPONSE_DETAIL_EXAMPLES = merge(
+    TARJETA_UBICACION_RESPONSE_EXAMPLES,
+    [
+        {"horarios": [{**horario, "ubicacion_id": ubicacion_id} for horario in UBICACION_HORARIO_RESPONSE_EXAMPLES]}
+        for ubicacion_id in _IDS
+    ],
+)
+
+TARJETA_UBICACION_CREATE_NESTED_EXAMPLE = TARJETA_UBICACION_CREATE_NESTED_EXAMPLES[0]
+TARJETA_UBICACION_RESPONSE_DETAIL_EXAMPLE = TARJETA_UBICACION_RESPONSE_DETAIL_EXAMPLES[0]
 
 
 class TarjetaUbicacionCreateNested(TarjetaUbicacionCreate):
@@ -210,15 +254,7 @@ class TarjetaUbicacionNestedItem(TarjetaUbicacionCreateNested):
     ) -> list[UbicacionHorarioNestedItem] | None:
         return None if value is None else validator_unique_ids(value)
 
-    model_config = ConfigDict(
-        json_schema_extra={
-            "example": {
-                **TARJETA_UBICACION_CREATE_EXAMPLE,
-                "horarios": [{**UBICACION_HORARIO_CREATE_EXAMPLE, "id": UBICACION_HORARIO_RESPONSE_EXAMPLE["id"]}],
-                "id": _ID,
-            }
-        }
-    )
+    model_config = ConfigDict(json_schema_extra={"example": TARJETA_UBICACION_NESTED_EXAMPLES[0]})
 
 
 class TarjetaUbicacionResponseDetail(TarjetaUbicacionResponse):

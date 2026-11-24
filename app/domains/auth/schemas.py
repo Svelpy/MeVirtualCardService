@@ -175,7 +175,16 @@ class AuthTokens(BaseModel):
     refresh_token: str
     csrf_token: str
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "access_token": "<jwt-access-token>",
+                "refresh_token": "<refresh-token>",
+                "csrf_token": "<csrf-token>",
+            }
+        },
+    )
 
 
 class CurrentUser(BaseModel):
@@ -184,7 +193,10 @@ class CurrentUser(BaseModel):
     id: UUID
     role: Role
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"example": {"id": "8f14e45f-ceea-467a-9575-6b3f0c1a2b3c", "role": "user"}},
+    )
 
 
 class TokenClaims(BaseModel):
@@ -196,5 +208,16 @@ class TokenClaims(BaseModel):
     exp: datetime
     jti: UUID
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "sub": "8f14e45f-ceea-467a-9575-6b3f0c1a2b3c",
+                "role": "user",
+                "iat": "2026-02-01T09:00:00Z",
+                "exp": "2026-02-01T09:15:00Z",
+                "jti": "0f8fad5b-d9cb-469f-a165-70867728950e",
+            }
+        },
+    )
 

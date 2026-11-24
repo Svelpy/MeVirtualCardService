@@ -5,6 +5,12 @@ from pydantic import ConfigDict, Field, field_validator
 
 from app.shared.enums import ClaveSeccion
 from app.shared.schemas.base import AUDIT_EXAMPLE, SMALLINT_MAX, AuditMixin, SchemaBase
+from app.shared.schemas.examples import (
+    TARJETA_ID_EXAMPLE,
+    TIMESTAMP_EXAMPLES,
+    nested_examples,
+    pick,
+)
 from app.shared.services.validators import (
     validator_boolean,
     validator_non_empty_text,
@@ -12,18 +18,43 @@ from app.shared.services.validators import (
 )
 
 
-_ID = "45c48cce-2e2d-4fbd-aa1a-9b8c7d6e5f4a"
+# Las 8 secciones de una tarjeta, una por ClaveSeccion: la lista siempre las trae todas.
+_SECCIONES = (
+    ("45c48cce-2e2d-4fbd-aa1a-9b8c7d6e5f40", "acerca", "Sobre mí", True),
+    ("45c48cce-2e2d-4fbd-aa1a-9b8c7d6e5f41", "contacto", "Contáctame", True),
+    ("45c48cce-2e2d-4fbd-aa1a-9b8c7d6e5f42", "vitrina", "Servicios", True),
+    ("45c48cce-2e2d-4fbd-aa1a-9b8c7d6e5f43", "ubicacion", "Dónde atiendo", True),
+    ("45c48cce-2e2d-4fbd-aa1a-9b8c7d6e5f44", "redes", "Sígueme", True),
+    ("45c48cce-2e2d-4fbd-aa1a-9b8c7d6e5f45", "educacion", "Formación", True),
+    ("45c48cce-2e2d-4fbd-aa1a-9b8c7d6e5f46", "certificaciones", "Certificaciones", False),
+    ("45c48cce-2e2d-4fbd-aa1a-9b8c7d6e5f47", "faq", "Preguntas frecuentes", True),
+)
+_IDS = tuple(seccion[0] for seccion in _SECCIONES)
+_ID = _IDS[0]
 
-TARJETA_SECCION_CREATE_EXAMPLE = {"titulo": "Sobre mí", "is_visible": True, "orden": 0}
-TARJETA_SECCION_RESPONSE_EXAMPLE = {
-    "id": _ID,
-    "tarjeta_id": "3f1c2a9e-8b7d-4c6e-9a1b-2c3d4e5f6a7b",
-    "clave": "acerca",
-    **TARJETA_SECCION_CREATE_EXAMPLE,
-    "created_at": "2026-01-15T14:30:00Z",
-    "updated_at": "2026-02-01T09:00:00Z",
-}
-TARJETA_SECCION_PUBLIC_EXAMPLE = {"clave": "acerca", "titulo": "Sobre mí"}
+TARJETA_SECCION_CREATE_EXAMPLES = [
+    {"titulo": titulo, "is_visible": is_visible, "orden": orden}
+    for orden, (_, _, titulo, is_visible) in enumerate(_SECCIONES)
+]
+TARJETA_SECCION_RESPONSE_EXAMPLES = [
+    {
+        "id": id_,
+        "tarjeta_id": TARJETA_ID_EXAMPLE,
+        "clave": clave,
+        **create,
+        **TIMESTAMP_EXAMPLES[index % len(TIMESTAMP_EXAMPLES)],
+    }
+    for index, (create, (id_, clave, _, _)) in enumerate(zip(TARJETA_SECCION_CREATE_EXAMPLES, _SECCIONES))
+]
+# Solo las visibles, en su orden.
+TARJETA_SECCION_PUBLIC_EXAMPLES = pick(
+    [example for example in TARJETA_SECCION_RESPONSE_EXAMPLES if example["is_visible"]], "clave", "titulo"
+)
+TARJETA_SECCION_NESTED_EXAMPLES = nested_examples(TARJETA_SECCION_CREATE_EXAMPLES, _IDS)
+
+TARJETA_SECCION_CREATE_EXAMPLE = TARJETA_SECCION_CREATE_EXAMPLES[0]
+TARJETA_SECCION_RESPONSE_EXAMPLE = TARJETA_SECCION_RESPONSE_EXAMPLES[0]
+TARJETA_SECCION_PUBLIC_EXAMPLE = TARJETA_SECCION_PUBLIC_EXAMPLES[0]
 
 # Las 8 secciones fijas, una por ClaveSeccion.
 TARJETA_SECCION_COUNT = len(ClaveSeccion)

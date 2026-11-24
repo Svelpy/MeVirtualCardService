@@ -5,6 +5,12 @@ from uuid import UUID
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from app.shared.schemas.base import AUDIT_EXAMPLE, SMALLINT_MAX, AuditMixin, SchemaBase
+from app.shared.schemas.examples import (
+    TARJETA_ID_EXAMPLE,
+    nested_examples,
+    pick,
+    response_examples,
+)
 from app.shared.services.validators import (
     validator_boolean,
     validator_date,
@@ -14,38 +20,72 @@ from app.shared.services.validators import (
 )
 
 
-_ID = "9bf31c7f-f062-4a3a-8b2b-5c4d3e2f1a0b"
+_IDS = (
+    "9bf31c7f-f062-4a3a-8b2b-5c4d3e2f1a0b",
+    "9bf31c7f-f062-4a3a-8b2b-5c4d3e2f1a0c",
+    "9bf31c7f-f062-4a3a-8b2b-5c4d3e2f1a0d",
+)
+_ID = _IDS[0]
 
-TARJETA_CERTIFICACION_CREATE_EXAMPLE = {
-    "nombre": "Certificación en Ecografía Básica",
-    "entidad_emisora": "Sociedad Boliviana de Ecografía",
-    "codigo_credencial": "SBE-2024-0153",
-    "url_credencial": "https://sbe.example.org/credenciales/SBE-2024-0153",
-    "fecha_emision": "2024-05-10",
-    "fecha_expiracion": "2029-05-10",
-    "no_expira": False,
-    "descripcion": "Curso teórico-práctico de 120 horas.",
-    "is_visible": True,
-    "orden": 0,
-}
-TARJETA_CERTIFICACION_RESPONSE_EXAMPLE = {
-    "id": _ID,
-    "tarjeta_id": "3f1c2a9e-8b7d-4c6e-9a1b-2c3d4e5f6a7b",
-    **TARJETA_CERTIFICACION_CREATE_EXAMPLE,
-    "created_at": "2026-01-15T14:30:00Z",
-    "updated_at": "2026-02-01T09:00:00Z",
-}
-TARJETA_CERTIFICACION_PUBLIC_EXAMPLE = {
-    "id": _ID,
-    "nombre": "Certificación en Ecografía Básica",
-    "entidad_emisora": "Sociedad Boliviana de Ecografía",
-    "codigo_credencial": "SBE-2024-0153",
-    "url_credencial": "https://sbe.example.org/credenciales/SBE-2024-0153",
-    "fecha_emision": "2024-05-10",
-    "fecha_expiracion": "2029-05-10",
-    "no_expira": False,
-    "descripcion": "Curso teórico-práctico de 120 horas.",
-}
+# no_expira true exige fecha_expiracion null: los ejemplos muestran certificaciones con vencimiento.
+TARJETA_CERTIFICACION_CREATE_EXAMPLES = [
+    {
+        "nombre": "Certificación en Ecografía Básica",
+        "entidad_emisora": "Sociedad Boliviana de Ecografía",
+        "codigo_credencial": "SBE-2024-0153",
+        "url_credencial": "https://sbe.example.org/credenciales/SBE-2024-0153",
+        "fecha_emision": "2024-05-10",
+        "fecha_expiracion": "2029-05-10",
+        "no_expira": False,
+        "descripcion": "Curso teórico-práctico de 120 horas.",
+        "is_visible": True,
+        "orden": 0,
+    },
+    {
+        "nombre": "Reanimación Neonatal (NRP)",
+        "entidad_emisora": "Sociedad Boliviana de Pediatría",
+        "codigo_credencial": "SBP-NRP-2025-0412",
+        "url_credencial": "https://sbp.example.org/credenciales/SBP-NRP-2025-0412",
+        "fecha_emision": "2025-03-20",
+        "fecha_expiracion": "2027-03-20",
+        "no_expira": False,
+        "descripcion": "Reanimación del recién nacido en sala de partos.",
+        "is_visible": True,
+        "orden": 1,
+    },
+    {
+        "nombre": "Soporte Vital Pediátrico Avanzado (PALS)",
+        "entidad_emisora": "Colegio Médico de La Paz",
+        "codigo_credencial": "CMLP-PALS-2023-0098",
+        "url_credencial": "https://colmedlp.example.org/credenciales/CMLP-PALS-2023-0098",
+        "fecha_emision": "2023-09-05",
+        "fecha_expiracion": "2025-09-05",
+        "no_expira": False,
+        "descripcion": "Manejo de emergencias pediátricas; vencida, oculta en la tarjeta.",
+        "is_visible": False,
+        "orden": 2,
+    },
+]
+TARJETA_CERTIFICACION_RESPONSE_EXAMPLES = response_examples(
+    TARJETA_CERTIFICACION_CREATE_EXAMPLES, _IDS, tarjeta_id=TARJETA_ID_EXAMPLE
+)
+TARJETA_CERTIFICACION_PUBLIC_EXAMPLES = pick(
+    TARJETA_CERTIFICACION_RESPONSE_EXAMPLES,
+    "id",
+    "nombre",
+    "entidad_emisora",
+    "codigo_credencial",
+    "url_credencial",
+    "fecha_emision",
+    "fecha_expiracion",
+    "no_expira",
+    "descripcion",
+)
+TARJETA_CERTIFICACION_NESTED_EXAMPLES = nested_examples(TARJETA_CERTIFICACION_CREATE_EXAMPLES, _IDS)
+
+TARJETA_CERTIFICACION_CREATE_EXAMPLE = TARJETA_CERTIFICACION_CREATE_EXAMPLES[0]
+TARJETA_CERTIFICACION_RESPONSE_EXAMPLE = TARJETA_CERTIFICACION_RESPONSE_EXAMPLES[0]
+TARJETA_CERTIFICACION_PUBLIC_EXAMPLE = TARJETA_CERTIFICACION_PUBLIC_EXAMPLES[0]
 
 TARJETA_CERTIFICACION_MAX = 10
 

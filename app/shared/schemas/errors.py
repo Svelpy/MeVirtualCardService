@@ -15,9 +15,14 @@ class ErrorResponse(BaseModel):
         json_schema_extra={
             "example": {
                 "status": "fail",
-                "code": "ERROR_CODE",
-                "message": "La solicitud no pudo procesarse.",
-                "details": {},
+                "code": "VALIDATION_ERROR",
+                "message": "Los datos enviados no son válidos.",
+                # details: campo (o ruta dentro del árbol) → motivo. Puede venir vacío.
+                "details": {
+                    "slug": "Ya está en uso.",
+                    "contactos -> 0 -> valor": "El teléfono no tiene un formato válido.",
+                    "items -> 2 -> categoria_id": "La categoría no existe en esta vitrina.",
+                },
             }
         }
     )

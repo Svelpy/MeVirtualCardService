@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.domains.auth.dependencies import get_current_principal, require_permission
 from app.domains.auth.schemas import CurrentUser
+from app.domains.tarjeta.schemas import UsuarioResponseMe
 from app.domains.usuario.schemas import (
     UsuarioCreate,
     UsuarioResponseAudit,
@@ -29,15 +30,20 @@ router = APIRouter(prefix="/usuarios", tags=["Usuarios"])
 
 @router.get(
     "/me",
-    response_model=UsuarioResponseDetail,
+    response_model=UsuarioResponseMe,
     summary="Obtener mi usuario",
+    description=(
+        "Mi usuario, mi plan y mi tarjeta completa como la ve su dueño: theme, seo, todas sus hijas "
+        "(visibles y ocultas) y la vitrina con categorías, items e imágenes. tarjeta es null si "
+        "todavía no la creé. Cada parte se edita en su propia ruta."
+    ),
     responses=error_responses(401, 404, 500),
 )
 async def get_me(
     current_user: Annotated[CurrentUser, Depends(get_current_principal)],
     db_session: Annotated[AsyncSession, Depends(get_db)],
-) -> UsuarioResponseDetail:
-    return await UsuarioService.get(db_session, current_user.id)
+) -> UsuarioResponseMe:
+    return await UsuarioService.get_me(db_session, current_user)
 
 
 @router.patch(
