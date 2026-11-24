@@ -61,6 +61,11 @@ class PresetTheme(str, Enum):
     ELEGANTE = "elegante"
     SALUD = "salud"
     CORPORATIVO = "corporativo"
+    CALIDO = "calido"
+    NATURAL = "natural"
+    BELLEZA = "belleza"
+    CREATIVO = "creativo"
+    ENERGIA = "energia"
 
 
 class FormaIcono(str, Enum):

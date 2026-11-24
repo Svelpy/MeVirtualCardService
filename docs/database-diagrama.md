@@ -70,7 +70,7 @@ erDiagram
 
 	tarjeta_theme {
 		uuid id PK,FK "mismo id que la tarjeta"
-		enum preset "NULL, claro | oscuro | elegante | salud | corporativo"
+		enum preset "NULL, claro | oscuro | elegante | salud | corporativo | calido | natural | belleza | creativo | energia"
 		smallint tipografia "NOT NULL, default 1, id en TIPOGRAFIAS_TARJETA del frontend"
 		char color_fondo "7, NOT NULL, #RRGGBB, fondo general"
 		char color_superficie "7, NOT NULL, secciones, cards, items, FAQ"

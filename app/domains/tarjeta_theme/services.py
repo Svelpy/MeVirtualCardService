@@ -9,7 +9,7 @@ from app.domains.tarjeta.services import tarjeta_scope_for
 from app.domains.tarjeta_theme.models import TarjetaTheme
 from app.domains.tarjeta_theme.repositories import TarjetaThemeRepository
 from app.domains.tarjeta_theme.schemas import (
-    COLOR_FIELDS,
+    PRESET_FIELDS,
     THEME_PRESETS,
     TarjetaThemeAplicarPreset,
     TarjetaThemeUpdate,
@@ -41,7 +41,7 @@ class TarjetaThemeService:
         data: TarjetaThemeUpdate,
         actor: CurrentUser,
     ) -> TarjetaTheme:
-        """Cambiar un color a mano deja el theme como personalizado (preset = NULL)."""
+        """Cambiar a mano un campo del preset deja el theme como personalizado (preset = NULL)."""
         theme = await TarjetaThemeService.get(db_session, theme_id, actor)
         changes = {
             field: value
@@ -51,7 +51,7 @@ class TarjetaThemeService:
         if changes:
             for field, value in changes.items():
                 setattr(theme, field, value)
-            if set(changes) & set(COLOR_FIELDS):
+            if set(changes) & set(PRESET_FIELDS):
                 theme.preset = None
             theme.updated_at = utc_now()
             theme.updated_by = actor.id
@@ -65,7 +65,7 @@ class TarjetaThemeService:
         data: TarjetaThemeAplicarPreset,
         actor: CurrentUser,
     ) -> TarjetaTheme:
-        """Copia los colores del preset. La tipografía y el resto de la apariencia no cambian."""
+        """Copia los valores del preset (PRESET_FIELDS). La tipografía no cambia."""
         theme = await TarjetaThemeService.get(db_session, theme_id, actor)
         for field, value in THEME_PRESETS[data.preset].items():
             setattr(theme, field, value)

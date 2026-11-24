@@ -20,7 +20,7 @@ def _arbol(**overrides) -> dict:
         "slug": f"dra-ana-{uuid4().hex[:6]}",
         "rubro": "Pediatría",
         "nombres": "Ana María",
-        "theme": {"preset": "oscuro", "tipografia": 3},
+        "theme": {"preset": "oscuro"},
         "seo": {"meta_title": "Dra. Ana", "robots_index": False},
         "vitrina": {
             "moneda": "usd",
@@ -91,8 +91,9 @@ async def test_las_extensiones_se_crean_con_lo_recibido(client, user):
     tarjeta = await _crear(client, user)
     headers = auth_header(user)
     theme = (await client.get(f"/api/v1/tarjeta-themes/{tarjeta['id']}", headers=headers)).json()
-    assert (theme["preset"], theme["tipografia"]) == ("oscuro", 3)
-    assert theme["color_fondo"] == THEME_PRESETS[PresetTheme.OSCURO]["color_fondo"]
+    assert (theme["preset"], theme["tipografia"]) == ("oscuro", 1)  # con solo el preset
+    oscuro = THEME_PRESETS[PresetTheme.OSCURO]
+    assert {field: theme[field] for field in oscuro} == oscuro  # todos sus valores, también los no color
     seo = (await client.get(f"/api/v1/tarjeta-seos/{tarjeta['id']}", headers=headers)).json()
     assert (seo["meta_title"], seo["robots_index"]) == ("Dra. Ana", False)
     vitrina = (await client.get(f"/api/v1/vitrinas/{tarjeta['id']}", headers=headers)).json()
@@ -353,6 +354,12 @@ async def test_theme_editar_un_color_lo_personaliza_y_aplicar_preset_lo_restaura
     assert (response.json()["preset"], response.json()["color_primario"]) == (None, "#FF0000")
     response = await client.patch(url, json={"tipografia": 2}, headers=auth_header(user))
     assert response.json()["preset"] is None  # la tipografía no cambia el preset
+    # Aplicar un preset nuevo copia todos sus valores; editar la forma de los íconos lo personaliza.
+    response = await client.post(f"{url}/aplicar-preset", json={"preset": "energia"}, headers=auth_header(user))
+    energia = THEME_PRESETS[PresetTheme.ENERGIA]
+    assert {field: response.json()[field] for field in energia} == energia
+    response = await client.patch(url, json={"icono_forma": "circulo"}, headers=auth_header(user))
+    assert response.json()["preset"] is None
 
     response = await client.post(f"{url}/aplicar-preset", json={"preset": "salud"}, headers=auth_header(user))
     body = response.json()

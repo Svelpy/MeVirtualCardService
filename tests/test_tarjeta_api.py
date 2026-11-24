@@ -4,17 +4,18 @@ from datetime import time
 from uuid import uuid4
 
 import pytest
+from pydantic import ValidationError
 from sqlalchemy import select
 
 from app.domains.tarjeta_faq.models import TarjetaFaq
 from app.domains.tarjeta_seccion.models import TarjetaSeccion
 from app.domains.tarjeta_seo.models import TarjetaSeo
 from app.domains.tarjeta_theme.models import TarjetaTheme
-from app.domains.tarjeta_theme.schemas import COLOR_FIELDS, THEME_PRESETS
+from app.domains.tarjeta_theme.schemas import COLOR_FIELDS, PRESET_FIELDS, THEME_PRESETS, TarjetaThemeCreate
 from app.domains.tarjeta_ubicacion.models import TarjetaUbicacion
 from app.domains.ubicacion_horario.models import UbicacionHorario
 from app.domains.vitrina.models import Vitrina
-from app.shared.enums import ClaveSeccion, PresetTheme
+from app.shared.enums import ClaveSeccion, FormaIcono, PosicionFab, PresetTheme
 from app.shared.services.validators import validator_hex_color
 from tests.conftest import auth_header, create_usuario, uploaded_image_url
 
@@ -34,11 +35,29 @@ async def _crear(client, usuario, **overrides) -> dict:
 
 # ---------- Presets ----------
 
+def test_hay_un_preset_por_cada_valor_del_enum():
+    assert list(THEME_PRESETS) == list(PresetTheme)
+    assert [preset.value for preset in PresetTheme] == [
+        "claro", "oscuro", "elegante", "salud", "corporativo", "calido", "natural", "belleza", "creativo", "energia"
+    ]
+
+
 @pytest.mark.parametrize("preset", list(PresetTheme))
-def test_cada_preset_define_todos_los_colores(preset):
-    colores = THEME_PRESETS[preset]
-    assert list(colores) == [field for field in COLOR_FIELDS]
-    assert all(validator_hex_color(color) == color for color in colores.values())
+def test_cada_preset_define_todos_sus_campos_con_valores_validos(preset):
+    valores = THEME_PRESETS[preset]
+    assert list(valores) == list(PRESET_FIELDS)
+    assert set(COLOR_FIELDS) <= set(PRESET_FIELDS) and "tipografia" not in valores
+    assert all(validator_hex_color(valores[field]) == valores[field] for field in COLOR_FIELDS)
+    assert 0 <= valores["overlay_opacidad"] <= 100
+    assert isinstance(valores["icono_forma"], FormaIcono) and isinstance(valores["fab_posicion"], PosicionFab)
+
+
+def test_el_theme_se_crea_solo_con_el_preset():
+    assert TarjetaThemeCreate(preset="energia").preset is PresetTheme.ENERGIA
+    with pytest.raises(ValidationError):
+        TarjetaThemeCreate(preset="claro", tipografia=3)  # la tipografía no se elige al crear
+    with pytest.raises(ValidationError):
+        TarjetaThemeCreate(preset="neon")
 
 
 # ---------- Crear ----------

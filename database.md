@@ -22,7 +22,9 @@ Convenciones de este archivo:
 CREATE TYPE rol_usuario AS ENUM ('user', 'admin', 'superadmin');
 CREATE TYPE metodo_pago AS ENUM ('qr', 'transferencia', 'tarjeta', 'efectivo', 'otro');
 CREATE TYPE posicion_nombre_empresa AS ENUM ('arriba', 'abajo', 'izquierda', 'derecha', 'oculto');
-CREATE TYPE preset_theme AS ENUM ('claro', 'oscuro', 'elegante', 'salud', 'corporativo');
+CREATE TYPE preset_theme AS ENUM (
+    'claro', 'oscuro', 'elegante', 'salud', 'corporativo', 'calido', 'natural', 'belleza', 'creativo', 'energia'
+);
 CREATE TYPE forma_icono AS ENUM ('circulo', 'redondeado', 'cuadrado', 'ninguno');
 CREATE TYPE posicion_fab AS ENUM ('derecha', 'izquierda');
 CREATE TYPE clave_seccion AS ENUM (

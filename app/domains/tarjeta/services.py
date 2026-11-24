@@ -188,8 +188,8 @@ class TarjetaService:
         await db_session.flush()  # el árbol apunta a tarjeta.id
 
         theme = data.theme or TarjetaThemeCreate()
-        colors = THEME_PRESETS[theme.preset]
-        db_session.add(TarjetaTheme(id=tarjeta.id, **theme.model_dump(), **colors, **audit))
+        preset_values = THEME_PRESETS[theme.preset]
+        db_session.add(TarjetaTheme(id=tarjeta.id, **theme.model_dump(), **preset_values, **audit))
         db_session.add(TarjetaSeo(id=tarjeta.id, **(data.seo.model_dump() if data.seo else {}), **audit))
         db_session.add(Vitrina(id=tarjeta.id, **vitrina.model_dump(exclude={"categorias", "items"}), **audit))
         for categoria in vitrina.categorias:

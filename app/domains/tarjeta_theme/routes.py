@@ -70,7 +70,11 @@ async def update_tarjeta_theme(
     "/{theme_id}/aplicar-preset",
     response_model=TarjetaThemeResponse,
     summary="Aplicar un preset al theme",
-    description="Copia los colores del preset; la tipografía y el resto de la apariencia no cambian.",
+    description=(
+        "Copia los valores del preset: los 20 colores, overlay_opacidad, icono_forma y fab_posicion, y "
+        "deja preset con su nombre. La tipografía no cambia. Sirve también para volver a un preset "
+        "después de personalizar el theme."
+    ),
     responses=error_responses(401, 403, 404, 422, 500),
 )
 async def aplicar_preset_tarjeta_theme(
