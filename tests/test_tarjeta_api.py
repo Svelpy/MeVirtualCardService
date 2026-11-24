@@ -145,6 +145,27 @@ async def test_un_usuario_no_ve_ni_modifica_la_tarjeta_de_otro(client, db_sessio
     assert (await client.get(f"{BASE}/?user_id={otro.id}", headers=headers)).json()["total"] == 0
 
 
+async def test_slug_disponible_es_publico_y_reconoce_el_slug_propio(client, db_session, user):
+    url = f"{BASE}/public/slug-disponible"
+    tarjeta = await _crear(client, user)
+
+    libre = (await client.get(f"{url}/libre-{uuid4().hex[:8]}")).json()
+    assert libre["disponible"] is True
+    assert (await client.get(f"{url}/{tarjeta['slug']}")).json() == {"slug": tarjeta["slug"], "disponible": False}
+    # Para su dueño, su slug actual cuenta como disponible; para otro usuario, no.
+    propio = await client.get(f"{url}/{tarjeta['slug']}", headers=auth_header(user))
+    assert propio.json()["disponible"] is True
+    otro = await create_usuario(db_session, "otro@test.example.com")
+    assert (await client.get(f"{url}/{tarjeta['slug']}", headers=auth_header(otro))).json()["disponible"] is False
+
+    for invalido in ("ab", "Con-Mayusculas", "-guion", "doble--guion", "a" * 81):
+        assert (await client.get(f"{url}/{invalido}")).status_code == 422, invalido
+
+    # Al eliminar la tarjeta, su slug queda libre.
+    await client.delete(f"{BASE}/{tarjeta['id']}", headers=auth_header(user))
+    assert (await client.get(f"{url}/{tarjeta['slug']}")).json()["disponible"] is True
+
+
 async def test_el_user_no_audita_su_tarjeta(client, user):
     tarjeta = await _crear(client, user)
     assert (await client.get(f"{BASE}/{tarjeta['id']}/audit", headers=auth_header(user))).status_code == 403

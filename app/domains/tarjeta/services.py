@@ -387,6 +387,15 @@ class TarjetaService:
             )
 
     @staticmethod
+    async def slug_disponible(db_session: AsyncSession, slug: str, actor: CurrentUser | None) -> bool:
+        """
+        Libre si ninguna tarjeta no eliminada lo usa. Con sesión, el slug actual de
+        la tarjeta propia también cuenta como disponible: guardarlo no da 409.
+        """
+        tarjeta = await TarjetaRepository.get_by_slug(db_session, slug)
+        return tarjeta is None or (actor is not None and tarjeta.user_id == actor.id)
+
+    @staticmethod
     async def _ensure_slug_available(db_session: AsyncSession, slug: str) -> None:
         if await TarjetaRepository.get_by_slug(db_session, slug) is not None:
             raise _conflict("Ese slug ya está en uso.", details={"slug": "Ya está en uso."})

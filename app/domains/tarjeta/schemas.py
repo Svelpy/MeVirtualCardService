@@ -348,6 +348,18 @@ class TarjetaPublic(SchemaBase):
     )
 
 
+class TarjetaSlugDisponibleResponse(SchemaBase):
+    """
+    GET /tarjetas/public/slug-disponible/{slug}: si ese slug se puede usar en
+    me.svelpy.com/{slug}. El slug actual de la tarjeta propia cuenta como disponible.
+    """
+
+    slug: str
+    disponible: bool
+
+    model_config = ConfigDict(json_schema_extra={"example": {"slug": "dra-ana-perez", "disponible": True}})
+
+
 class TarjetasDespublicadasResponse(SchemaBase):
     """Resultado de POST /tarjetas/despublicar-vencidas: cuántas tarjetas se despublicaron."""
 

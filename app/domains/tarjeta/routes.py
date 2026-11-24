@@ -1,12 +1,12 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Path, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
 from app.core.database import get_db
-from app.domains.auth.dependencies import require_permission, require_role
+from app.domains.auth.dependencies import get_current_principal_optional, require_permission, require_role
 from app.domains.auth.schemas import CurrentUser
 from app.domains.tarjeta.schemas import (
     TarjetaCreateNested,
@@ -14,10 +14,12 @@ from app.domains.tarjeta.schemas import (
     TarjetaResponseAudit,
     TarjetaResponseDetail,
     TarjetaResponseItemList,
+    TarjetaSlugDisponibleResponse,
     TarjetaUpdateNested,
     TarjetasDespublicadasResponse,
 )
 from app.domains.tarjeta.services import TarjetaService
+from app.middlewares.limiter import limiter
 from app.shared.enums import Action, Module, Role
 from app.shared.schemas.errors import error_responses
 from app.shared.schemas.pagination import PaginatedResponse
@@ -28,6 +30,28 @@ router = APIRouter(prefix="/tarjetas", tags=["Tarjetas"])
 
 # ---------- Lectura anónima (§24) ----------
 # Antes de /{tarjeta_id}, para que "public" no se lea como un id.
+
+@router.get(
+    "/public/slug-disponible/{slug}",
+    response_model=TarjetaSlugDisponibleResponse,
+    summary="Verificar si un slug está disponible",
+    description=(
+        "Sin login, para validar el slug mientras se escribe (me.svelpy.com/{slug}). Un slug con formato "
+        "inválido (solo minúsculas, dígitos y guiones simples, de 3 a 80) responde 422. Con sesión, el "
+        "slug actual de la tarjeta propia cuenta como disponible."
+    ),
+    responses=error_responses(401, 422, 429, 500),
+)
+@limiter.limit("30/minute")
+async def slug_disponible(
+    request: Request,
+    slug: Annotated[str, Path(min_length=3, max_length=80, pattern=r"^[a-z0-9]+(-[a-z0-9]+)*$")],
+    current_user: Annotated[CurrentUser | None, Depends(get_current_principal_optional)],
+    db_session: Annotated[AsyncSession, Depends(get_db)],
+) -> TarjetaSlugDisponibleResponse:
+    disponible = await TarjetaService.slug_disponible(db_session, slug, current_user)
+    return TarjetaSlugDisponibleResponse(slug=slug, disponible=disponible)
+
 
 @router.get(
     "/public/id/{tarjeta_id}",
