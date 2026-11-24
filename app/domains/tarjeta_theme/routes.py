@@ -54,7 +54,11 @@ async def audit_tarjeta_theme(
     "/{theme_id}",
     response_model=TarjetaThemeResponse,
     summary="Editar el theme de una tarjeta",
-    description="Cambiar un color a mano deja el theme como personalizado (preset null).",
+    description=(
+        "Un campo que no se envía no cambia. Cambiar a mano un valor del preset (los color_*, "
+        "overlay_opacidad, icono_forma o fab_posicion) deja el theme como personalizado (preset null); "
+        "cambiar la tipografía no. Para volver a un preset: POST /{id}/aplicar-preset."
+    ),
     responses=error_responses(401, 403, 404, 422, 500),
 )
 async def update_tarjeta_theme(

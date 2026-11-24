@@ -182,8 +182,10 @@ async def create_tarjeta(
     response_model=TarjetaResponseDetail,
     summary="Editar una tarjeta",
     description=(
-        "Cada lista es el estado final: ausente o null no se toca, [] elimina todos sus elementos. Un "
-        "elemento sin id se crea; con id, se actualiza. secciones lleva siempre las 8 con su id."
+        "Un campo que no se envía no cambia. Cada lista es el estado final: ausente o null no se toca, [] "
+        "elimina todos sus elementos. Un elemento sin id se crea; con id, se actualiza; uno existente que "
+        "no viene se elimina, por eso la lista se envía completa. secciones lleva siempre las 8 con su id. "
+        "theme, seo y vitrina no se editan aquí: tienen su propio PATCH."
     ),
     responses=error_responses(401, 403, 404, 409, 422, 500),
 )
